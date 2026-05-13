@@ -1,6 +1,6 @@
 {
   "name": "memento-mcp",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "license": "Apache-2.0",
   "description": "Fragment-Based Memory MCP Server",
   "main": "server.js",
@@ -20,6 +20,7 @@
     "test:ci": "npm test && npm run test:integration",
     "lint": "eslint .",
     "backfill:embeddings": "node scripts/backfill-embeddings.js",
+    "lint:migrations": "node scripts/lint-migrations.js",
     "migrate": "node scripts/migrate.js",
     "cli": "node bin/memento.js"
   },

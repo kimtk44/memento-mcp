@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.5.0] - 2026-05-13
+
+기존 API·DB 스키마 호환. Breaking change 없음.
+
+### Added
+
+- `scripts/lint-migrations.js`: 신규 마이그레이션 파일이 body-only 규약(`BEGIN`/`COMMIT` 래퍼 금지, `INSERT INTO agent_memory.schema_migrations` 금지, 파일명 `migration-NNN-<slug>.sql`)을 따르는지 검증한다. cutoff는 환경변수 `MIGRATION_LINT_FROM` 또는 기존 파일 최대 번호+1로 자동 결정되어 기존 파일은 면제된다.
+- `package.json` scripts: `lint:migrations` 항목.
+
+### Docs
+
+- `docs/migration-conventions.md`: 신규 마이그레이션 파일이 따라야 할 body-only 규약·멱등성 패턴·파일명 규약·추가 절차.
+- `docs/operations/agent-worktree.md`: 에이전트 isolation 워크트리 적체 방지 운영 가이드. cleanup 훅·cron GC·상한 5개·일괄 정리 절차·트러블슈팅.
+- `docs/operations/upstream-porting.md`: upstream remote 등록·port 브랜치 네이밍·cherry-pick 우선 정책·divergence 감지·fork 전용 패치 격리·충돌 해결 절차.
+
+---
+
 ## [3.4.0] - 2026-05-13
 
 기존 API·DB 스키마 호환. Breaking change 없음.

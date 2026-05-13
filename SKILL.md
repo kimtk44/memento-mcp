@@ -2,9 +2,11 @@
 
 AI 에이전트가 Memento MCP 기억 서버를 최대 효율로 활용하기 위한 기술 레퍼런스.
 
-## 현재 버전: v3.4.0
+## 현재 버전: v3.5.0
 
-v3.4.0은 LLM dispatcher 코어(`dispatchChain`)를 export로 분리하여 단위 테스트가 실제 구현을 직접 검증하도록 정리한 minor 릴리즈다. `llmJson`은 chain 빌드·redact만 담당한 뒤 `dispatchChain`에 위임하며, semaphore/deadline/timeout cap 분기는 모두 `dispatchChain` 안에서 동작한다. 단위 테스트가 들고 있던 인라인 dispatcher mirror는 제거됐다. 함께 `docs/concurrency.md`(write 경로별 lock 매트릭스)와 `docs/features.md`(모듈 ledger)가 신설되어 운영·리뷰 보조용 단일 페이지 ledger를 제공한다.
+v3.5.0은 마이그레이션 파일 규약을 명문화하고 운영 가이드를 정비한 minor 릴리즈다. `scripts/lint-migrations.js`가 신규 파일에 body-only 규약과 파일명 형식을 강제하여 `scripts/migrate.js`의 정규식 재작성 부담이 신규 파일로 확산되지 않게 한다. `docs/operations/agent-worktree.md`와 `docs/operations/upstream-porting.md`가 신설되어 에이전트 워크트리 적체와 upstream port 워크플로우를 단일 페이지에서 참조할 수 있다.
+
+v3.4.0 변경 요약: LLM dispatcher 코어(`dispatchChain`)를 export로 분리하여 단위 테스트가 실제 구현을 직접 검증. `docs/concurrency.md`와 `docs/features.md`로 운영·리뷰 보조 ledger 신설.
 
 v3.3.0 변경 요약: `MemoryConsolidator._runConsolidationCycle`을 선언형 `stageDefs` 배열로 재구성하여 SSE/관리 콘솔 진행률 정합을 확보. `test:ci`에 통합 테스트를 포함하여 CI 단일 게이트가 unit + integration + e2e를 모두 커버.
 
