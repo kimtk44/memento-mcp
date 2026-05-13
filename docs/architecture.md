@@ -1,7 +1,7 @@
 # Architecture
 
 작성자: 최진호
-수정일: 2026-04-29
+수정일: 2026-05-13
 
 ## 시스템 구조
 
@@ -28,51 +28,61 @@ server.js  (HTTP 서버)
     └── lib/memory/
             ├── MemoryManager.js          비즈니스 로직 조율 facade (259줄, 싱글턴). 15개 공개 메서드를 1줄 위임으로 4개 processor에 라우팅. 공유 프로퍼티는 _installSharedSync로 동기화
             ├── processors/
-            │   ├── MemoryRememberer.js   remember() 전담 (~695줄). R12 TDZ 핫픽스 포함: fragment 생성 후 atomic 분기
+            │   ├── MemoryRememberer.js   remember() 전담 (~695줄). _runPolicyGate 헬퍼로 dryRun·atomic·non-atomic 분기를 동일 시점에 평가. R12 TDZ 핫픽스 포함
             │   ├── MemoryRecaller.js     recall() 전담 (~405줄). fields pick 단계, depth 필터, CBR 경로
             │   ├── MemoryReflector.js    reflect() 전담 (~89줄). session 요약→파편 변환
             │   └── MemoryLinker.js       link()/forget()/amend() 전담 (~80줄)
+            ├── read/                     검색 레이어 모듈 (v3.7.0 서브디렉토리 분할)
+            │   ├── FragmentSearch.js     3계층 검색 조율 (구조적: L1→L2, 시맨틱: L1→L2‖L3 RRF 병합). 구버전 stub re-export: lib/memory/FragmentSearch.js
+            │   ├── CaseRecall.js         caseMode: true 경로 전담. case_id별 (goal, events[], outcome) 트리플 반환
+            │   ├── LinkedFragmentLoader.js 연결 파편 일괄 로드 (1-hop 이웃 배치 조회)
+            │   ├── RecallSuggestionEngine.js recall 결과 분석 후 _suggestion 메타 생성
+            │   ├── SearchScope.js        검색 정합 필터 계약 (v4.0.0). workspace/caseId/resolutionStatus/phase/affect/keyId 캡슐화. applyTo(fragment) → boolean. L1 HotCache·L2·L3·Graph 각 호출 사이트에서 fragment 단위 필터링. _executeSearch 후처리 보정 제거
+            │   └── SearchSideEffects.js  검색 부작용 격리 모듈 (v3.9.0). commitSearchSideEffects()가 searchEventId를 동기 반환하고 SearchParamAdaptor.recordOutcome()을 fire-and-forget으로 호출. FragmentSearch는 검색 파이프라인에만 집중
+            ├── write/                    쓰기 레이어 모듈 (v3.7.0 서브디렉토리 분할)
+            │   └── FragmentWriter.js     파편 쓰기 (insert, update, delete, incrementAccess, touchLinked). 구버전 stub re-export: lib/memory/FragmentWriter.js
+            ├── link/                     링크 레이어 모듈 (v3.7.0 서브디렉토리 분할)
+            │   └── ReconsolidationEngine.js  fragment_links weight/confidence 동적 갱신 엔진 (reinforce/decay/quarantine/restore/soft_delete + 이력 기록). 구버전 stub re-export: lib/memory/ReconsolidationEngine.js
+            ├── consolidate/              통합 레이어 모듈 (v3.7.0 서브디렉토리 분할)
+            │   ├── MemoryConsolidator.js 21단계 선언형 유지보수 파이프라인 (stageDefs 배열, TOTAL_STAGES = stageDefs.length). NLI + Gemini 하이브리드. 구버전 stub re-export: lib/memory/MemoryConsolidator.js
+            │   └── FragmentGC.js         파편 만료 삭제, 지수 감쇠, TTL 계층 전환 (permanent parole + EMA 배치 감쇠 포함). 구버전 stub re-export: lib/memory/FragmentGC.js
+            ├── embedding/                임베딩 레이어 모듈 (v3.7.0 서브디렉토리 분할)
+            │   ├── EmbeddingWorker.js    Redis 큐 기반 비동기 임베딩 생성 워커 (EventEmitter). 구버전 stub re-export: lib/memory/EmbeddingWorker.js
+            │   ├── EmbeddingCache.js     쿼리 임베딩 Redis 캐시 (emb:q:{sha256} 키, TTL 1시간, 장애 격리). 구버전 stub re-export: lib/memory/EmbeddingCache.js
+            │   └── MorphemeIndex.js      형태소 기반 L3 폴백 인덱스. 구버전 stub re-export: lib/memory/MorphemeIndex.js
+            ├── signals/                  신호 레이어 모듈 (v3.7.0 서브디렉토리 분할)
+            │   ├── SpreadingActivation.js contextText 기반 비동기 활성화 전파 (ACT-R 모델, keywords GIN seed → 1-hop 그래프 확산, 10분 TTL 캐시). 구버전 stub re-export: lib/memory/SpreadingActivation.js
+            │   ├── CaseRewardBackprop.js  case verification 이벤트 → 증거 파편 importance 원자적 역전파. MEMENTO_CASE_BACKPROP_ENABLED 환경변수 미설정 시 즉시 반환. 구버전 stub re-export: lib/memory/CaseRewardBackprop.js
+            │   └── NLIClassifier.js       NLI 기반 모순 분류기 (mDeBERTa ONNX, CPU). 구버전 stub re-export: lib/memory/NLIClassifier.js
             ├── ContextBuilder.js         context() 로직 전담. Core/Working/Anchor Memory 조합 컨텍스트 생성
             ├── ReflectProcessor.js       reflect() 로직 전담. summary→파편 변환, episode 생성, Working Memory 정리
             ├── BatchRememberProcessor.js batchRemember() 로직 전담. Phase A(검증)→B(INSERT)→C(후처리) 3단계
             ├── QuotaChecker.js           API 키 파편 할당량 검사 (fragment_limit 기반)
             ├── RememberPostProcessor.js  remember() 후처리 파이프라인 (임베딩/형태소/링크/assertion/시간링크/평가큐/ProactiveRecall 포함)
-            ├── EmbeddingCache.js         쿼리 임베딩 Redis 캐시 (emb:q:{sha256} 키, TTL 1시간, 장애 격리)
             ├── FragmentFactory.js        파편 생성, 유효성 검증, PII 마스킹
             ├── FragmentStore.js          PostgreSQL CRUD 파사드 (FragmentReader + FragmentWriter 위임)
             ├── FragmentReader.js         파편 읽기. `getById(id, agentId, keyId, groupKeyIds)` — groupKeyIds 파라미터로 그룹 소속 키의 파편도 단일 호출로 조회. `getByIds`, `getHistory`, `searchByKeywords`, `searchBySemantic`
-            ├── FragmentWriter.js         파편 쓰기 (insert, update, delete, incrementAccess, touchLinked)
-            ├── FragmentSearch.js         3계층 검색 조율 (구조적: L1→L2, 시맨틱: L1→L2‖L3 RRF 병합)
             ├── FragmentIndex.js          Redis L1 인덱스 관리, getFragmentIndex() 싱글톤 팩토리
-            ├── EmbeddingWorker.js        Redis 큐 기반 비동기 임베딩 생성 워커 (EventEmitter)
             ├── GraphLinker.js            임베딩 완료 이벤트 구독 자동 관계 생성 + 소급 링킹 + Hebbian co-retrieval 링킹
-            ├── MemoryConsolidator.js     18단계 유지보수 파이프라인 (NLI + Gemini 하이브리드)
             ├── MemoryEvaluator.js        비동기 Gemini CLI 품질 평가 워커 (싱글턴)
-            ├── NLIClassifier.js          NLI 기반 모순 분류기 (mDeBERTa ONNX, CPU)
             ├── SessionActivityTracker.js 세션별 도구 호출/파편 활동 추적 (Redis)
             ├── ConflictResolver.js       충돌 감지, supersede, autoLinkOnRemember(topic 기반 구조적 링킹)
-            ├── SessionLinker.js         세션 파편 통합, 자동 링크, 사이클 감지
-            ├── LinkStore.js             파편 링크 관리 (fragment_links CRUD + RCA 체인)
-            ├── FragmentGC.js            파편 만료 삭제, 지수 감쇠, TTL 계층 전환 (permanent parole + EMA 배치 감쇠 포함)
-            ├── ConsolidatorGC.js        피드백 리포트, stale 파편 수집/정리, 긴 파편 분할, 피드백 기반 보정
-            ├── ContradictionDetector.js 모순 감지, 대체 관계 감지, 보류 큐 처리
+            ├── SessionLinker.js          세션 파편 통합, 자동 링크, 사이클 감지
+            ├── LinkStore.js              파편 링크 관리 (fragment_links CRUD + RCA 체인)
+            ├── ConsolidatorGC.js         피드백 리포트, stale 파편 수집/정리, 긴 파편 분할, 피드백 기반 보정
+            ├── ContradictionDetector.js  모순 감지, 대체 관계 감지, 보류 큐 처리
             ├── AutoReflect.js            세션 종료 시 자동 reflect 오케스트레이터
             ├── decay.js                  지수 감쇠 반감기 상수, 순수 계산 함수, ACT-R EMA 활성화 근사 (`updateEmaActivation`, `computeEmaRankBoost`), EMA 기반 동적 반감기 (`computeDynamicHalfLife`), 나이 가중치 utility score (`computeUtilityScore`)
             ├── SearchMetrics.js          L1/L2/L3/total 레이어별 지연 시간 수집 (Redis 원형 버퍼, P50/P90/P99)
             ├── SearchEventAnalyzer.js    검색 이벤트 분석, 쿼리 패턴 추적 (SearchEventRecorder로부터 읽음)
             ├── SearchEventRecorder.js    FragmentSearch.search() 결과 to search_events 테이블 기록
             ├── UtilityBaseline.js        파편 utility baseline 계산 (중복 제거/압축 판단 기준선)
-            ├── LinkedFragmentLoader.js   연결 파편 일괄 로드 (1-hop 이웃 배치 조회)
             ├── GraphNeighborSearch.js    L2.5 그래프 이웃 검색 (fragment_links 1-hop 양방향 UNION, tanh 포화 스코어링 + 관계 유형별 부스트)
             ├── TemporalLinker.js         시간 기반 자동 링크 (동일 topic ±24h, weight=max(0.3, 1-hours/24), 최대 5건)
             ├── Reranker.js               Cross-Encoder 재정렬 (RERANKER_URL 설정 시 외부 HTTP, 미설정 시 ONNX in-process; RERANKER_MODEL로 minilm/bge-m3 선택)
             ├── EvaluationMetrics.js      tool_feedback 기반 implicit Precision@5 및 downstream task 성공률 계산
-            ├── MorphemeIndex.js          형태소 기반 L3 폴백 인덱스
-            ├── ReconsolidationEngine.js  fragment_links weight/confidence 동적 갱신 엔진 (reinforce/decay/quarantine/restore/soft_delete + 이력 기록)
             ├── EpisodeContinuityService.js reflect() 호출 후 case_events milestone_reached + preceded_by 엣지 연결 (idempotency_key 기반 중복 방지)
-            ├── SpreadingActivation.js    contextText 기반 비동기 활성화 전파 (ACT-R 모델, keywords GIN seed → 1-hop 그래프 확산, 10분 TTL 캐시)
             ├── CaseEventStore.js         semantic milestone 로그 (case_events CRUD, DAG 엣지, 증거 조인)
-            ├── CaseRewardBackprop.js     case verification 이벤트 -> 증거 파편 importance 원자적 역전파 (64줄)
             ├── SearchParamAdaptor.js     key_id x query_type x hour별 minSimilarity 온라인 학습, 원자적 UPSERT (116줄)
             ├── HistoryReconstructor.js   case_id/entity 기반 서사 재구성 (ordered_timeline, causal_chains, unresolved_branches)
             ├── memory-schema.sql         PostgreSQL 스키마 정의
@@ -165,6 +175,24 @@ lib/logging/
 └── audit.js           감사 로그 및 접근 이력 기록
 ```
 
+스토리지 어댑터 계층은 `lib/storage/`에 분리되어 있다 (v4.0.0).
+
+```
+lib/storage/
+├── index.js         getStorage() 팩토리 싱글톤. MEMENTO_STORAGE 환경변수로 어댑터 선택
+│                    pgvector(기본) → PgVectorStore / sqlite-vec → SqliteVecStore
+│                    알 수 없는 값은 경고 없이 pgvector로 폴백
+├── PgVectorStore.js PostgreSQL + pgvector 어댑터. lib/tools/db.js의 getPrimaryPool()과
+│                    queryWithAgentVector()를 StorageAdapter 인터페이스에 맞게 위임
+│                    engine='pgvector', vectorSupport='native'
+└── SqliteVecStore.js SQLite + sqlite-vec 어댑터 stub (v4.1 구현 예정)
+                     engine='sqlite-vec', vectorSupport='extension'
+```
+
+StorageAdapter 공통 인터페이스: `query(sql, params)`, `queryAsAgent(agentId, sql, params)`, `transaction(fn)`, `migrate(filePath, opsClass)`, `close()`, `engine`, `vectorSupport`.
+
+v4.1에서 기존 lib/tools/db.js 직접 호출 사이트를 getStorage()로 마이그레이션할 예정이다. 현 시점에서 lib/tools/db.js는 primary pool 및 batch pool을 계속 직접 제공한다.
+
 도구 구현은 `lib/tools/`에 분리되어 있다.
 
 ```
@@ -172,7 +200,7 @@ lib/tools/
 ├── memory.js    16개 MCP 도구 핸들러
 ├── reconstruct.js  reconstruct_history, search_traces 도구 핸들러 (Narrative Reconstruction)
 ├── memory-schemas.js  도구 스키마 정의 (inputSchema)
-├── db.js        PostgreSQL 연결 풀, RLS 적용 쿼리 헬퍼 (MCP 미노출)
+├── db.js        PostgreSQL 연결 풀, RLS 적용 쿼리 헬퍼 (MCP 미노출). getPrimaryPool(), getBatchPool(), queryWithAgentVector()
 ├── db-tools.js  MCP DB 도구 핸들러 (db.js에서 분리된 도구별 로직)
 ├── embedding.js OpenAI 텍스트 임베딩 생성
 ├── stats.js     접근 통계 수집 및 저장
@@ -861,7 +889,7 @@ recall 도구에 `caseMode: true`를 전달하면 CaseRecall 경로가 활성화
 
 ### CaseRewardBackprop
 
-`lib/memory/CaseRewardBackprop.js`. case_events에 `verification_passed` 또는 `verification_failed` 이벤트가 삽입될 때 fragment_evidence를 통해 증거 파편의 importance를 원자적으로 역전파한다.
+`lib/memory/signals/CaseRewardBackprop.js`. case_events에 `verification_passed` 또는 `verification_failed` 이벤트가 삽입될 때 fragment_evidence를 통해 증거 파편의 importance를 원자적으로 역전파한다. `MEMENTO_CASE_BACKPROP_ENABLED` 환경변수가 `"true"`가 아니면 호출 즉시 반환된다.
 
 - `verification_passed` → 증거 파편 `importance += 0.15` (상한 1.0 클램프)
 - `verification_failed` → 증거 파편 `importance -= 0.10` (하한 0.0 클램프)
@@ -873,7 +901,7 @@ recall 도구에 `caseMode: true`를 전달하면 CaseRecall 경로가 활성화
 
 tool_feedback 피드백 신호를 fragment_links의 weight/confidence에 실시간 반영하는 링크 강도 갱신 엔진이다.
 
-`lib/memory/ReconsolidationEngine.js` + `link_reconsolidations` 테이블.
+`lib/memory/link/ReconsolidationEngine.js` + `link_reconsolidations` 테이블.
 
 환경변수 `ENABLE_RECONSOLIDATION=true` 설정 시 활성화된다.
 
@@ -905,7 +933,7 @@ weight/confidence 변경 이력 감사 테이블. `ReconsolidationEngine.reconso
 
 recall 호출 시 `contextText` 파라미터를 전달하면 관련 파편의 `ema_activation`을 선제적으로 부스트하는 비동기 활성화 전파 엔진이다.
 
-`lib/memory/SpreadingActivation.js`.
+`lib/memory/signals/SpreadingActivation.js`.
 
 환경변수 `ENABLE_SPREADING_ACTIVATION=true` 설정 시 활성화된다.
 
@@ -1050,7 +1078,22 @@ LocalTransformersEmbedder.generate(text)
 
 상세 전환 절차: [docs/embedding-local.md](embedding-local.md)
 
-### LLM Dispatcher — CLI Providers
+### LLM Dispatcher — dispatchChain 및 CLI Providers
+
+v3.4.0에서 `lib/llm/index.js`에 `dispatchChain(chain, prompt, options, deps)` 함수가 분리 export되었다. `llmJson()`은 chain 빌드와 `redactPrompt()` 처리를 수행한 뒤 이 함수에 위임한다.
+
+```
+llmJson(prompt, options)
+    │
+    ├── redactPrompt(prompt) → safePrompt
+    ├── buildChain(LLM_PRIMARY, LLM_FALLBACKS) → chain
+    └── dispatchChain(chain, safePrompt, options, { startedAt })
+            │
+            ├── provider 순차 시도 (semaphore + circuit breaker 포함)
+            └── 첫 성공 응답 반환 / 전부 실패 시 Error throw
+```
+
+기존 5개 호출자(AutoReflect, MorphemeIndex, ConsolidatorGC, ContradictionDetector, MemoryEvaluator)는 `llmJson`을 그대로 사용하며 코드 변경 없이 동작한다.
 
 `codex-cli` provider는 `model` / `timeoutMs` 설정을 실제 CLI 호출까지 전달한다. `qwen-cli` provider도 지원된다.
 
@@ -1177,7 +1220,7 @@ retry 정책:
 
 SQL 타입 주의: `fragments.id`는 `frag-{16자 hex}` TEXT 타입이므로 multi-row UPDATE placeholder는 `::text`와 `::vector`를 사용한다. `::uuid` cast 사용 금지 (타입 불일치 오류 발생).
 
-관련 코드: `lib/memory/EmbeddingWorker.js` line 183~293 (`_embedMany`, `_embedChunk`, `_embedOne`).
+관련 코드: `lib/memory/embedding/EmbeddingWorker.js` — `_embedMany`, `_embedChunk`, `_embedOne`.
 
 ### MorphemeIndex 비동기 분리 + Consistency Gate
 
@@ -1185,11 +1228,93 @@ SQL 타입 주의: `fragments.id`는 `frag-{16자 hex}` TEXT 타입이므로 mul
 
 `getOrRegisterEmbeddings`는 누락 형태소 전체를 `generateBatchEmbeddings` 1회 + multi-row INSERT(`ON CONFLICT DO NOTHING`) 1회로 처리한다. 청크: 200건 또는 256KB 누적 중 먼저 도달. 배치 실패 시 `_parseBadIndexes` 정규식으로 문제 항목 격리 후 나머지 재시도, 인덱스 미명시 에러는 `_fallbackSingleRegister` 단건 경로.
 
-Consistency Gate: `FragmentReader.searchBySemantic` 파라미터 `morphemeOnly=true` 설정 시 `f.morpheme_indexed = true` 조건을 WHERE절에 추가(`lib/memory/FragmentReader.js` line 402~403). `FragmentSearch._searchL3` morpheme sub-path(`lib/memory/FragmentSearch.js` line 582)가 이 플래그를 전달한다. 형태소 등록 미완료 파편은 키워드 매칭(L2)은 가능하지만 형태소 기반 L3 시맨틱 검색에서는 제외된다.
+Consistency Gate: `FragmentReader.searchBySemantic` 파라미터 `morphemeOnly=true` 설정 시 `f.morpheme_indexed = true` 조건을 WHERE절에 추가(`lib/memory/FragmentReader.js`). `lib/memory/read/FragmentSearch.js`의 `_searchL3` morpheme sub-path가 이 플래그를 전달한다. 형태소 등록 미완료 파편은 키워드 매칭(L2)은 가능하지만 형태소 기반 L3 시맨틱 검색에서는 제외된다.
 
 migration-035(`lib/memory/migration-035-morpheme-indexed.sql`): `fragments.morpheme_indexed BOOLEAN NOT NULL DEFAULT false` 컬럼 추가, 기존 파편 백필, 부분 인덱스(`WHERE morpheme_indexed = false`) 생성.
 
 관련 코드: `lib/memory/MorphemeIndex.js` line 116~266, `lib/memory/RememberPostProcessor.js` line 107~214.
+
+### lib/memory 6서브디렉토리 구조 (v3.7.0)
+
+v3.7.0에서 `lib/memory/` 하위 파일을 기능 도메인별로 6개 서브디렉토리로 분할했다. 기존 경로는 stub re-export로 하위 호환을 유지한다.
+
+```
+lib/memory/
+├── read/          FragmentSearch, CaseRecall, LinkedFragmentLoader, RecallSuggestionEngine, SearchScope(v4.0), SearchSideEffects(v3.9)
+├── write/         FragmentWriter
+├── link/          ReconsolidationEngine
+├── consolidate/   MemoryConsolidator, FragmentGC
+├── embedding/     EmbeddingWorker, EmbeddingCache, MorphemeIndex
+└── signals/       SpreadingActivation, CaseRewardBackprop, NLIClassifier
+```
+
+기존 `lib/memory/FragmentSearch.js` 등 구버전 경로는 각 서브디렉토리의 실제 모듈을 re-export하는 stub 파일로 유지되어 외부 임포트 경로를 변경할 필요가 없다.
+
+### SearchScope 계약 (v4.0.0)
+
+`lib/memory/read/SearchScope.js`. 검색 레이어 간 필터 조건을 단일 객체로 캡슐화한다.
+
+캡슐화 필드: `workspace`, `caseId`, `resolutionStatus`, `phase`, `affect`, `keyId`.
+
+`SearchScope.fromQuery(sq)` 정적 팩토리로 `_buildSearchQuery()` 반환값에서 생성한다. `applyTo(fragment) → boolean`으로 fragment 단위 정합 검사를 수행한다.
+
+v4.0.0 이전에는 `_executeSearch` 후처리 단계에서 workspace/affect 보정을 적용했다. v4.0.0부터는 L1 HotCache, L2, L3, Graph 각 호출 사이트가 `scope.applyTo(fragment)` 한 번으로 필터링을 완료하며 `_executeSearch` 후처리 보정이 제거되었다.
+
+### SearchSideEffects 부작용 격리 (v3.8.0 + v3.9.0)
+
+v3.8.0에서 FragmentSearch 내부에 인라인되어 있던 검색 이벤트 기록 및 SearchParamAdaptor 학습 로직을 `lib/memory/read/SearchSideEffects.js`로 외부화했다. v3.9.0에서 SearchEventId 동기 반환 계약을 확정했다.
+
+`commitSearchSideEffects(query, sq, cleanResult, ctx) → Promise<string|null>`:
+- `recordSearchEvent(searchEvent)` await — searchEventId를 동기 반환하여 호출자가 응답에 `_meta.searchEventId`를 부착할 수 있도록 보장 (tool_feedback FK 계약)
+- `SearchParamAdaptor.recordOutcome()` — fire-and-forget
+
+FragmentSearch는 검색 파이프라인 결과 생성에만 집중하고, 부작용은 이 함수 1회 호출로 명시적 분리한다.
+
+### Consolidator 21 stage 선언형 파이프라인 (v3.3.0)
+
+`lib/memory/consolidate/MemoryConsolidator.js`. stage 목록을 `stageDefs[]` 배열로 선언하며 `TOTAL_STAGES = stageDefs.length`로 자동 집계한다. 새 stage 추가 시 배열에 항목 1개만 push하면 progress 계산과 emit이 자동 반영된다.
+
+현재 21개 stage (순서):
+
+| 번호 | name | 설명 |
+|---|---|---|
+| 1 | ttl_transition | TTL 계층 전환 |
+| 2 | importance_decay | 중요도 감쇠 |
+| 3 | expired_delete | 만료 파편 삭제 |
+| 4 | gc_preview | GC 후보 프리뷰 |
+| 5 | split_long_fragments | 긴 파편 분할 |
+| 6 | merge_duplicates | 중복 병합 (GROUP BY key_id, workspace, content_hash) |
+| 7 | semantic_dedup | 시맨틱 중복 제거 |
+| 8 | compress_old_fragments | 오래된 파편 압축 |
+| 9 | embeddings_backfill | 임베딩 소급 처리 |
+| 10 | retro_link | 소급 링킹 |
+| 11 | utility_score_update | utility_score 갱신 |
+| 12 | requeue_high_ema | EMA 높은 저품질 파편 재평가 큐 등록 |
+| 13 | promote_anchors | anchor 승격 |
+| 14 | detect_contradictions | 모순 감지 |
+| 15 | detect_supersessions | supersede 관계 감지 |
+| 16 | process_pending_contradictions | 보류 모순 처리 |
+| 17 | feedback_report | 피드백 리포트 생성 |
+| 18 | feedback_calibration | 피드백 기반 보정 |
+| 19 | prune_keyword_indexes | 키워드 인덱스 정리 |
+| 20 | collect_stale_fragments | stale 파편 수집 |
+| 21 | purge_stale_reflections / gc_search_events | 오래된 reflect 정리 / 검색 이벤트 GC |
+
+### _mergeDuplicates scope (v3.2.2)
+
+`_mergeDuplicates()`는 `GROUP BY key_id, workspace, content_hash` 단위로 중복을 탐지한다. master 키(key_id IS NULL)의 파편은 자동 병합 대상에서 제외된다. scope 불일치 그룹은 경고 로그 후 건너뛴다.
+
+### _runPolicyGate 통일 (v3.2.2)
+
+`MemoryRememberer._runPolicyGate(fragment, { keyId, mode })`. mode 값은 `"dryRun"` 또는 `"production"`. dryRun·atomic·non-atomic 세 분기에서 PolicyRules 평가를 동일 시점에 수행하도록 통일되었다. dryRun 경우 실제 저장 없이 validation_warnings만 반환한다.
+
+### CaseRewardBackprop ENV 게이트 (v3.6.0)
+
+`MEMENTO_CASE_BACKPROP_ENABLED` 환경변수가 `"true"`로 설정되지 않으면 `CaseRewardBackprop.backprop()` 호출이 즉시 반환된다. 게이트를 통과한 경우에만 fragment_evidence 조회 및 importance 역전파가 실행된다.
+
+### migration body-only 규약 (v3.5.0 + v3.9.0)
+
+`scripts/migrate.js`는 마이그레이션 파일의 정규식 재작성을 제거했다. 기존 14개 마이그레이션 파일은 정규화 처리되었으며, 신규 마이그레이션 파일은 body-only 규약(SET 문·세미콜론으로 끝나는 순수 SQL)을 준수해야 한다. `lint:migrations` 스크립트로 규약 위반을 CI에서 차단한다.
 
 ### batchPool / Primary pool 분리
 

@@ -53,6 +53,20 @@ npm run test:integration:llm
 
 ---
 
+## npm 스크립트 요약
+
+| 스크립트 | 실행 범위 |
+|--------|---------|
+| `npm test` | unit 전체 (Jest + node:test) |
+| `npm run test:jest` | Jest unit 테스트만 |
+| `npm run test:unit:node` | node:test unit 테스트만 |
+| `npm run test:integration` | 통합 + e2e (tests/integration/*.test.js + tests/e2e/*.test.js) |
+| `npm run test:e2e` | e2e만 |
+| `npm run test:ci` | `npm test && npm run test:integration` — CI 단일 게이트 (DB/Redis 필요) |
+| `npm run lint:migrations` | migration SQL body-only 규약 검사 (MIGRATION_LINT_FROM 기준) |
+
+---
+
 ## 테스트 파일 목록
 
 ### 단위 테스트 (tests/unit/)

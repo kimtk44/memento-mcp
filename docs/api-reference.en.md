@@ -365,7 +365,7 @@ Each returned fragment includes a `key_id` field. When called with a master key,
 
 | Field | Description |
 |-------|-------------|
-| `_meta.searchEventId` | Search event ID to reference when calling tool_feedback |
+| `_meta.searchEventId` | FK value to pass as `search_event_id` when calling tool_feedback. The search event ID persisted by `commitSearchSideEffects`. |
 | `_meta.hints` | Array of search improvement hints from the system |
 | `_meta.suggestion` | RecallSuggestionEngine hint object (null when no issue detected) |
 
@@ -531,7 +531,7 @@ Normal response:
 }
 ```
 
-`validation_warnings`: Array of PolicyRules soft gating violations. When `MEMENTO_SYMBOLIC_POLICY_RULES=false` (default), always returns an empty array or the field is omitted. When enabled, failed predicates accumulate from the following 5:
+`validation_warnings`: Array of PolicyRules soft gating violation rule names (string[]). The field is omitted when there are no violations. When `MEMENTO_SYMBOLIC_POLICY_RULES=false` (default), always omitted. Both the atomic path (`MEMENTO_REMEMBER_ATOMIC=true`) and the non-atomic path share the same `_runPolicyGate` call, so the format is identical on both paths. When enabled, failed predicates accumulate from the following 5:
 
 - `decisionHasRationale` — decision type lacks 2+ linked_to references or rationale keywords
 - `errorHasResolutionPath` — error type lacks cause/fix keywords or resolution_status
@@ -851,6 +851,17 @@ Response:
 - Session start -- Call `context()` to load core memories. Preferences, error patterns, and procedures are restored. If unreflected sessions exist, a hint is displayed.
 - During work -- Save important decisions, errors, and procedures with `remember()`. Similar fragments are automatically linked at storage time. Use `recall()` to search past experience when needed. After resolving an error, clean up the error fragment with `forget()` and record the resolution procedure with `remember()`.
 - Session end -- Use `reflect()` to persist session content as structured fragments. Even without manual invocation, AutoReflect runs automatically on session end/expiration.
+
+---
+
+## Key Environment Variables — Tool Behavior Impact
+
+| Variable | Default | Scope of Impact |
+|-|-|-|
+| `MEMENTO_REMEMBER_ATOMIC` | `false` | When `true`, the remember path switches to `_rememberAtomic`. Quota re-validation and INSERT are handled atomically within a single BEGIN/COMMIT transaction using `SELECT api_keys FOR UPDATE`. `_runPolicyGate` runs identically on both paths, so the `validation_warnings` format is unchanged. |
+| `MEMENTO_CASE_BACKPROP_ENABLED` | `false` | When `true`, amending a fragment with a case_id (specifically changing resolutionStatus) triggers importance backpropagation to all fragments sharing the same caseId. Exported as the `CASE_BACKPROP_ENABLED` constant in `lib/config.js`. Boosts activation scores of related fragments after case resolution, improving subsequent recall precision. |
+| `MEMENTO_STORAGE` | `pgvector` | Selects the storage adapter. `pgvector` (default, production PgVectorStore) or `sqlite-vec` (planned v4.1 stub, SqliteVecStore). The `transaction(fn)` interface is preserved across adapters, so write-path concurrency semantics remain consistent. |
+| `MEMENTO_SYMBOLIC_POLICY_RULES` | `false` | When `true`, `_runPolicyGate` evaluates PolicyRules soft gates and accumulates failed rule names into `validation_warnings`. |
 
 ---
 

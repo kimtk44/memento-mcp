@@ -147,13 +147,14 @@ Claude.ai Web / ChatGPT 연동은 OAuth를 사용한다. 발급한 API 키(`mmcp
 
 | 기능 | 설명 |
 |------|------|
-| `remember` | 중요한 정보를 원자적 파편으로 분해하여 저장 |
-| `recall` | 키워드 + 시맨틱 3계층 검색으로 필요한 기억만 반환 |
+| `remember` | 중요한 정보를 원자적 파편으로 분해하여 저장. `MEMENTO_REMEMBER_ATOMIC=true` 시 quota check + INSERT를 단일 트랜잭션으로 원자화. |
+| `recall` | 키워드 + 시맨틱 3계층 검색으로 필요한 기억만 반환. `SearchScope`가 workspace/caseId/affect 등 scope를 L1~L3 전 레이어에 정합 적용. |
 | `context` | 세션 시작 시 핵심 맥락을 자동 복원 |
 | 자동 정리 | 중복 병합, 모순 탐지, 중요도 감쇠, TTL 기반 망각 |
-| **링크 재통합** | `tool_feedback` 피드백이 fragment_links의 weight/confidence에 실시간 반영 (ReconsolidationEngine). 모순 링크는 자동 격리(quarantine). |
-| **확산 활성화** | `recall` 시 `contextText`를 전달하면 관련 파편의 activation_score를 선제적으로 부스트하여 맥락 연관성 높은 결과 우선 반환 (SpreadingActivation). |
-| **에피소드 연속성** | `reflect` 후 생성된 episode 파편 간 `preceded_by` 엣지를 자동 생성하여 경험 흐름을 그래프로 보존 (EpisodeContinuityService). |
+| storage 어댑터 계층 | `lib/storage/` 신설. `getStorage()` 팩토리가 `MEMENTO_STORAGE` ENV에 따라 `PgVectorStore`(기본) 또는 `SqliteVecStore`(v4.1 예정)를 반환. |
+| 링크 재통합 | `tool_feedback` 피드백이 fragment_links의 weight/confidence에 실시간 반영 (ReconsolidationEngine). 모순 링크는 자동 격리(quarantine). |
+| 확산 활성화 | `recall` 시 `contextText`를 전달하면 관련 파편의 activation_score를 선제적으로 부스트하여 맥락 연관성 높은 결과 우선 반환 (SpreadingActivation). |
+| 에피소드 연속성 | `reflect` 후 생성된 episode 파편 간 `preceded_by` 엣지를 자동 생성하여 경험 흐름을 그래프로 보존 (EpisodeContinuityService). |
 | 관리 콘솔 | 기억 탐색, 지식 그래프, 통계 대시보드, API 키 그룹/상태 필터, daily-limit 인라인 편집 |
 | OAuth 연동 | RFC 7591 Dynamic Client Registration, Claude.ai / ChatGPT Web 통합 지원 |
 | Workspace 격리 | 같은 키 내에서도 프로젝트·직종·클라이언트 단위로 기억을 분리. `api_keys.default_workspace`로 자동 태깅, 검색 시 자동 필터. |
@@ -162,6 +163,7 @@ Claude.ai Web / ChatGPT 연동은 OAuth를 사용한다. 발급한 API 키(`mmcp
 | Mode preset | `recall-only` / `write-only` / `onboarding` / `audit` JSON preset. `X-Memento-Mode` 헤더 또는 `api_keys.default_mode`로 도구 노출 범위 제한. |
 | Affective tagging | `fragments.affect` 컬럼(neutral / frustration / confidence / surprise / doubt / satisfaction). remember / recall 시 감정 레이블로 필터링. |
 | 로컬 임베딩 | `EMBEDDING_PROVIDER=transformers`로 외부 API 없이 `@huggingface/transformers` 파이프라인 기반 임베딩(`Xenova/multilingual-e5-small`, 384d 기본). |
+| 마이그레이션 lint | `npm run lint:migrations`로 신규 마이그레이션 파일의 번호 충돌·규약 위반을 커밋 전 자동 검사. |
 
 전체 MCP 도구 목록은 [SKILL.md](SKILL.md) 참조.
 
@@ -263,6 +265,28 @@ Memento는 사실 기억(fact cache)에 최적화되어 있다. 전후관계가 
 - 세션마다 같은 설명을 반복하는 게 짜증나는 사람
 - AI에게 내 프로젝트 맥락을 기억시키고 싶은 사람
 
+## 디렉토리 구조
+
+```
+lib/
+  memory/
+    read/        # FragmentSearch, SearchScope, SearchSideEffects, CaseRecall 등
+    write/       # MemoryRememberer, BatchRememberProcessor 등
+    link/        # MemoryLinker, ReconsolidationEngine 등
+    consolidate/ # MemoryConsolidator
+    embedding/   # EmbeddingWorker, EmbeddingCache, MorphemeIndex
+    signals/     # SpreadingActivation, CaseRewardBackprop 등
+    processors/  # facade — MemoryRecaller, MemoryReflector 등
+  storage/       # PgVectorStore(기본), SqliteVecStore(v4.1 예정) 어댑터 계층
+  llm/           # dispatchChain, provider 구현체
+  symbolic/      # SymbolicVerificationLayer (opt-in)
+docs/
+  getting-started/   # 플랫폼별 설치 가이드
+  operations/        # 운영 가이드 (llm-providers, symbolic-hard-gate 등)
+  features.md        # 모듈 ledger
+  configuration.md   # 환경변수 전체 레퍼런스
+```
+
 ## 더 알아보기
 
 | 문서 | 내용 |
@@ -271,9 +295,10 @@ Memento는 사실 기억(fact cache)에 최적화되어 있다. 전후관계가 
 | [Architecture](docs/architecture.md) | 시스템 구조, DB 스키마, 3계층 검색, TTL |
 | [Configuration](docs/configuration.md) | 환경 변수, MEMORY_CONFIG, 임베딩 Provider |
 | [API Reference](docs/api-reference.md) | HTTP 엔드포인트, 프롬프트, 리소스 |
-| [CLI](docs/cli.md) | 터미널 명령어 9개 |
+| [CLI](docs/cli.md) | 터미널 명령어 |
 | [Internals](docs/internals.md) | 평가기, 통합기, 모순 탐지 |
 | [Benchmark](docs/benchmark.md) | LongMemEval-S 벤치마크 상세 분석 |
+| [Features](docs/features.md) | 모듈 ledger, 실험 플래그, ENV 매핑 |
 | [SKILL.md](SKILL.md) | MCP 도구 전체 레퍼런스 |
 | [INSTALL.md](docs/INSTALL.md) | 마이그레이션, 훅 설정, 상세 설치 |
 | [CHANGELOG](CHANGELOG.md) | 버전별 변경사항 |
@@ -285,6 +310,8 @@ Memento는 사실 기억(fact cache)에 최적화되어 있다. 전후관계가 
 - 워커 복구: 임베딩/평가 워커가 에러 시 지수 백오프(1s→60s)로 자동 재시도.
 - Graceful Shutdown: SIGTERM 시 진행 중 워커 완료 대기(30초) 후 세션 auto-reflect 실행.
 - OAuth 엔드포인트: 인증 실패 시 `WWW-Authenticate` 헤더를 반환하여 OAuth 클라이언트가 자동으로 인증 흐름을 시작할 수 있다. 세션 TTL 기본값은 240분이다.
+- 마이그레이션 lint: `npm run lint:migrations`로 번호 충돌 및 규약 위반을 커밋 전 검사.
+- 운영 가이드: [docs/operations/](docs/operations/) — LLM provider 체인, symbolic hard gate, agent worktree, upstream porting 등.
 
 ## 알려진 제한사항
 

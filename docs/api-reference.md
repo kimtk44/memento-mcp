@@ -369,7 +369,7 @@ API 키의 일일 호출 제한을 변경한다. 마스터 키 인증 필요.
 
 | 필드 | 설명 |
 |------|------|
-| `_meta.searchEventId` | tool_feedback 호출 시 참조할 검색 이벤트 ID |
+| `_meta.searchEventId` | tool_feedback 호출 시 `search_event_id` 파라미터로 전달할 FK 값. `commitSearchSideEffects`가 영속화한 검색 이벤트 ID. |
 | `_meta.hints` | 시스템이 제안하는 검색 개선 힌트 배열 |
 | `_meta.suggestion` | RecallSuggestionEngine 생성 힌트 객체 (감지된 문제 없으면 null) |
 
@@ -547,7 +547,7 @@ violations 있는 경우 (soft gate — 저장됨):
 }
 ```
 
-`validation_warnings`: PolicyRules soft gating violations rule 이름 string[]. violations 없으면 필드 자체 생략. `MEMENTO_SYMBOLIC_POLICY_RULES=false` (기본값) 시 항상 생략. 활성화 시 다음 5가지 predicate 중 실패한 것이 누적된다:
+`validation_warnings`: PolicyRules soft gating violations rule 이름 string[]. violations 없으면 필드 자체 생략. `MEMENTO_SYMBOLIC_POLICY_RULES=false` (기본값) 시 항상 생략. atomic 경로(`MEMENTO_REMEMBER_ATOMIC=true`)와 non-atomic 경로 모두 동일한 `_runPolicyGate` 호출 경로를 거치므로 포맷이 동일하다. 활성화 시 다음 5가지 predicate 중 실패한 것이 누적된다:
 
 - `decisionHasRationale` — decision 타입이 linked_to 2건 이상 또는 근거 키워드 미포함
 - `errorHasResolutionPath` — error 타입이 cause/fix 키워드 또는 resolution_status 미포함
@@ -951,6 +951,17 @@ curl -si -X POST https://pmcp.nerdvana.kr/mcp \
 1. 세션 시작 — `context()`로 핵심 기억을 로드한다. 선호, 에러 패턴, 절차가 복원된다. 미반영 세션이 있으면 힌트가 표시된다.
 2. 작업 중 — 중요한 결정, 에러, 절차 발생 시 `remember()`로 저장한다. 저장 시 유사 파편과 자동으로 링크가 생성된다. 과거 경험이 필요하면 `recall()`로 검색한다. 에러 해결 후 `forget()`으로 에러 파편을 정리하고 `remember()`로 해결 절차를 기록한다.
 3. 세션 종료 — `reflect()`로 세션 내용을 구조화된 파편으로 영속화한다. 수동 호출 없이도 세션 종료/만료 시 AutoReflect가 자동으로 실행된다.
+
+---
+
+## 주요 환경변수 — 도구 동작 영향
+
+| 변수 | 기본값 | 영향 범위 |
+|-|-|-|
+| `MEMENTO_REMEMBER_ATOMIC` | `false` | `true` 시 remember 경로가 `_rememberAtomic`으로 전환. `SELECT api_keys FOR UPDATE` + 단일 BEGIN/COMMIT 트랜잭션으로 quota 재검증과 INSERT를 원자적으로 처리. `_runPolicyGate`는 양 경로 모두 동일하게 실행되므로 `validation_warnings` 포맷에 차이 없음. |
+| `MEMENTO_CASE_BACKPROP_ENABLED` | `false` | `true` 시 case_id를 가진 파편의 amend(resolutionStatus 변경) 시점에 동일 caseId 파편들의 importance를 역전파 조정. `lib/config.js`의 `CASE_BACKPROP_ENABLED` 상수로 export. case 해결 완료 시 관련 파편의 활성화 점수가 상향되어 이후 recall 정밀도를 높인다. |
+| `MEMENTO_STORAGE` | `pgvector` | 스토리지 어댑터 선택. `pgvector`(기본, 프로덕션용 PgVectorStore) 또는 `sqlite-vec`(v4.1 예정 stub, SqliteVecStore). 어댑터 교체 시 `transaction(fn)` 인터페이스가 유지되므로 write 경로 동시성 시맨틱은 동일하게 보존됨. |
+| `MEMENTO_SYMBOLIC_POLICY_RULES` | `false` | `true` 시 `_runPolicyGate`가 PolicyRules soft gate를 평가하여 위반 rule 이름을 `validation_warnings`에 누적. |
 
 ---
 

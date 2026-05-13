@@ -108,6 +108,14 @@ v1.8.0부터 자동 마이그레이션을 지원한다. 위 수동 실행 대신
 DATABASE_URL=postgresql://user:pass@host:port/dbname npm run migrate
 ```
 
+신규 마이그레이션 파일을 추가한 경우 `migrate` 실행 전에 body-only 규약 준수 여부를 검사한다.
+
+```bash
+npm run lint:migrations
+```
+
+규약 상세는 [docs/migration-conventions.md](migration-conventions.md) 참조.
+
 ### migration-034 번들 이전 버전에서 업그레이드
 
 ```bash
@@ -196,15 +204,19 @@ cp .env.example .env
 추가 환경 변수:
 
 ```
-DEDUP_BATCH_SIZE        - 시맨틱 dedup 배치 크기 (기본: 100)
-DEDUP_MIN_FRAGMENTS     - topic 내 최소 파편 수 (기본: 5)
-COMPRESS_AGE_DAYS       - 압축 대상 비활성 일수 (기본: 30)
-COMPRESS_MIN_GROUP      - 압축 그룹 최소 크기 (기본: 3)
-CONSOLIDATE_INTERVAL_MS - consolidate 주기 (기본: 3600000 = 1시간)
-ALLOWED_ORIGINS         - CORS 허용 Origin 목록 (쉼표 구분)
-RERANKER_MODEL          - in-process ONNX 모델 선택: minilm (기본, 영어 전용) 또는 bge-m3 (다국어, 비영어권 권장). ONNX 모델 preload 성공 시 자동 활성화
-LLM_PRIMARY             - 주 LLM provider (기본: gemini-cli). gemini-cli, codex, copilot, anthropic 등
-LLM_FALLBACKS           - JSON 배열. 각 원소: {"provider":"anthropic","apiKey":"...","model":"claude-opus-4-6"}
+DEDUP_BATCH_SIZE              - 시맨틱 dedup 배치 크기 (기본: 100)
+DEDUP_MIN_FRAGMENTS           - topic 내 최소 파편 수 (기본: 5)
+COMPRESS_AGE_DAYS             - 압축 대상 비활성 일수 (기본: 30)
+COMPRESS_MIN_GROUP            - 압축 그룹 최소 크기 (기본: 3)
+CONSOLIDATE_INTERVAL_MS       - consolidate 주기 (기본: 3600000 = 1시간)
+ALLOWED_ORIGINS               - CORS 허용 Origin 목록 (쉼표 구분)
+RERANKER_MODEL                - in-process ONNX 모델 선택: minilm (기본, 영어 전용) 또는 bge-m3 (다국어, 비영어권 권장)
+LLM_PRIMARY                   - 주 LLM provider (기본: gemini-cli). gemini-cli, codex, copilot, anthropic 등
+LLM_FALLBACKS                 - JSON 배열. 각 원소: {"provider":"anthropic","apiKey":"...","model":"claude-opus-4-6"}
+MEMENTO_REMEMBER_ATOMIC       - true로 설정 시 remember() quota 체크+INSERT를 단일 트랜잭션으로 원자화 (기본: false)
+MEMENTO_CASE_BACKPROP_ENABLED - true로 설정 시 CaseRewardBackprop 활성화 — case_id 단위 reward 역전파 (기본: false)
+MEMENTO_STORAGE               - 스토리지 어댑터 선택. pgvector (기본) 지원. 추가 어댑터는 lib/storage/ 참조
+MIGRATION_LINT_FROM           - lint:migrations가 검사를 시작하는 마이그레이션 번호 하한. 미설정 시 현존 파일 최대값+1
 ```
 
 환경 변수 전체 목록은 [Configuration — 환경 변수](configuration.md#환경-변수) 참조.

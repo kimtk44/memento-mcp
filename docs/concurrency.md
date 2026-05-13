@@ -41,11 +41,29 @@ write 경로별 lock 종류·격리 수준·재시도 정책을 한 페이지로
 3. deadlock·TOCTOU 가드가 의심되는 경우 통합 테스트로 박제한다(`tests/integration/<topic>-concurrency.test.js`).
 4. `docs/features.md`의 관련 모듈 행이 영향받으면 함께 갱신한다.
 
+## Read 경로 매트릭스
+
+read 경로는 write 경로와 달리 row-level lock을 사용하지 않는다. 대신 `SearchScope` 계약 객체가 레이어별 필터 일관성을 보장한다.
+
+|경로|진입점|필터 계약|격리 특성|비고|
+|-|-|-|-|-|
+|recall (HotCache)|`FragmentSearch._searchHotCache`|`SearchScope.applyTo(fragment)`|읽기 전용. RLS는 호출자 agent_id 적용|L1 캐시 히트. workspace/caseId/phase/affect 5개 필드를 단일 `applyTo` 호출로 판정|
+|recall (L3 semantic)|`FragmentSearch._searchL3`|`SearchScope.applyTo(fragment)` post-filter|읽기 전용|pgvector KNN 후 `SearchScope`로 2차 필터. v4.0.0 이전의 `_executeSearch` 후처리 보정 제거됨|
+|recall (graph)|`FragmentSearch._searchGraph`|호출 사이트에서 `SearchScope.applyTo` 직접 적용|읽기 전용|GraphExplorer가 반환한 fragment 각각에 applyTo 체크|
+|recall (side effects)|`commitSearchSideEffects` (`lib/memory/read/SearchSideEffects.js`)|없음 (결과 확정 후 별도 실행)|fire-and-forget `recordOutcome` + await `recordSearchEvent`|`searchEventId` 반환. tool_feedback FK 계약에 사용됨|
+
+`SearchScope` 객체는 `SearchScope.fromQuery(sq)`로 생성되며, `applyTo(fragment)` 호출이 `false`를 반환하면 해당 fragment를 결과에서 제외한다. workspace가 `null`인 scope는 전역 fragment(workspace=null)를 포함한다. `isNoop()`이 `true`인 경우 filter 루프를 건너뛸 수 있다.
+
+## 스토리지 어댑터 트랜잭션
+
+`lib/storage/index.js`의 `transaction(fn)` 인터페이스는 어댑터 종류에 관계없이 원자적 블록을 실행한다. `fn(client)`가 반환하는 Promise가 reject되면 자동 ROLLBACK된다. write 경로가 어댑터를 직접 교체해도 트랜잭션 시맨틱이 보존된다.
+
 ## 관련 환경 변수
 
 |변수|기본|영향|
 |-|-|-|
 |`MEMENTO_REMEMBER_ATOMIC`|`false`|`true`이면 remember 경로가 atomic 트랜잭션 사용|
+|`MEMENTO_STORAGE`|`pgvector`|스토리지 어댑터 선택. `pgvector`(기본, 프로덕션) 또는 `sqlite-vec`(v4.1 예정 stub)|
 |`LLM_CONCURRENCY_ENABLED`|`true`|`false`이면 dispatcher가 semaphore 없이 chain 호출|
 |`LLM_CONCURRENCY_WAIT_MS`|`30000`|semaphore 슬롯 대기 timeout|
 |`LLM_CONCURRENCY`|JSON|chainKey 또는 provider name 기준 limit override|

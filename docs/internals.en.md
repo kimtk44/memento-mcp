@@ -2,16 +2,16 @@
 
 ## MemoryManager (Orchestration Layer)
 
-MemoryManager is a 259-line thin facade. Business logic is delegated to 4 processors under `lib/memory/processors/`.
+MemoryManager is a thin facade. Business logic is delegated to 4 processors under `lib/memory/processors/`.
 
 **Processor decomposition:**
 
-| Processor | Delegated operations | Lines |
-|-----------|---------------------|-------|
-| `MemoryRememberer` | `remember()`, `batchRemember()` | ~695 |
-| `MemoryRecaller` | `recall()`, `context()` | ~405 |
-| `MemoryReflector` | `reflect()` | ~89 |
-| `MemoryLinker` | `link()`, `forget()`, `amend()` | ~80 |
+| Processor | Delegated operations | Location |
+|-----------|---------------------|----------|
+| `MemoryRememberer` | `remember()`, `batchRemember()` | `lib/memory/processors/MemoryRememberer.js` |
+| `MemoryRecaller` | `recall()`, `context()` | `lib/memory/processors/MemoryRecaller.js` |
+| `MemoryReflector` | `reflect()` | `lib/memory/processors/MemoryReflector.js` |
+| `MemoryLinker` | `link()`, `forget()`, `amend()` | `lib/memory/processors/MemoryLinker.js` |
 
 **Legacy decomposed modules (independent of facade):**
 
@@ -23,6 +23,16 @@ MemoryManager is a 259-line thin facade. Business logic is delegated to 4 proces
 | `QuotaChecker` | `remember()` entry | Per-API-key fragment quota (fragment_limit) check |
 | `RememberPostProcessor` | After `remember()` completes | Embedding generation, morpheme indexing, auto-linking, assertion check, temporal linking, evaluation queue enqueue, ProactiveRecall pipeline. ProactiveRecall logic included -- creates automatic `related_to` links with fragments sharing keyword overlap (>=50%) on remember() |
 
+Search-related modules are separated into `lib/memory/read/`.
+
+| Module | Role |
+|--------|------|
+| `FragmentSearch` (`lib/memory/read/FragmentSearch.js`) | Orchestrates the L1-L4 search pipeline |
+| `SearchScope` (`lib/memory/read/SearchScope.js`) | A single contract object that consistently passes workspace, caseId, resolutionStatus, phase, and affect filters to all search layers |
+| `SearchSideEffects` (`lib/memory/read/SearchSideEffects.js`) | Isolates post-search side effects (search event persistence, SearchParamAdaptor learning signal) into a single module |
+
+In v3.x, FragmentSearch was located at `lib/memory/FragmentSearch.js`. Starting in v4.0.0, search-related modules were moved to `lib/memory/read/`. A stub compatibility layer remains at the old path for backward compatibility.
+
 **Facade constructor flow:** Initializes 20 shared objects → injects into 4 processors via DI → calls `_installSharedSync()`. All 15 public methods are implemented as single-line delegations.
 
 **_installSharedSync:** Wraps each shared property setter on the facade (store, index, factory, etc.) with `Object.defineProperty`. A single assignment like `mm.store = stub` is automatically propagated to the facade and all processors (test DI compatibility).
@@ -31,24 +41,35 @@ MemoryManager is a 259-line thin facade. Business logic is delegated to 4 proces
 
 **reflect resolution_status auto-setting:** ReflectProcessor automatically assigns resolution_status to reflect-generated fragments. `errors_resolved` items receive `resolutionStatus: "resolved"`, and `open_questions` items receive `resolutionStatus: "open"`. All reflect-generated fragments also propagate `sessionId` for session-level tracking.
 
-**remember() pipeline structure:**
+**remember() pipeline structure (including MEMENTO_REMEMBER_ATOMIC=true path):**
 
 ```
 remember(params)
-  ├── dryRun branch — early return before atomic guard declaration
+  ├── dryRun branch — calls _runPolicyGate(dryFragment, {mode:"dryRun"}), then early return
   │     params.dryRun === true → computes validationResult without storing
   │     returns { dryRun: true, wouldStore: true/false, reason, params }
-  ├── atomic guard — atomicRemember && keyId condition
-  ├── QuotaChecker.check() — conditional on !(atomicRemember && keyId)
-  ├── idempotency branch — when params.idempotencyKey is present
-  │     FragmentReader.findByIdempotencyKey(key, keyId) lookup
-  │     if existing fragment found → early return { id, idempotent: true }
-  ├── FragmentWriter.insert() — actual fragment storage
-  │     idempotency_key column stores params.idempotencyKey (nullable)
+  ├── _runPolicyGate(fragment, {mode:"production"}) — PolicyRules hard gate, evaluated on all paths
+  │     dryRun, atomic, and non-atomic paths all pass through the same helper
+  │     SymbolicPolicyViolationError is thrown before any transaction begins
+  ├── atomic branch — MEMENTO_REMEMBER_ATOMIC=true && keyId condition
+  │     delegates to _rememberAtomic()
+  │       BEGIN
+  │       SELECT … FROM api_keys WHERE id=$keyId FOR UPDATE
+  │       fragment_limit count re-validation (inside transaction)
+  │       INSERT INTO fragments …
+  │       COMMIT
+  │       on quota violation: ROLLBACK → fragment_limit_exceeded error
+  ├── non-atomic branch — MEMENTO_REMEMBER_ATOMIC=false (default)
+  │     QuotaChecker.check() — pre-emptive check (no transaction)
+  │     idempotency branch — when params.idempotencyKey is present
+  │       FragmentReader.findByIdempotencyKey(key, keyId) lookup
+  │       if existing fragment found → early return { id, idempotent: true }
+  │     FragmentWriter.insert() — actual fragment storage
+  │       idempotency_key column stores params.idempotencyKey (nullable)
   └── RememberPostProcessor.run() — embedding/morpheme/link/eval post-processing
 ```
 
-The `dryRun` branch is positioned before the atomic guard declaration (before `fragment` variable TDZ). The atomic branch sits after the `fragment` declaration, resolving the TDZ, and the dryRun branch follows the same placement.
+The `dryRun` branch includes a `_runPolicyGate` call and is positioned before the atomic guard declaration. `_runPolicyGate` accepts a mode parameter (`"dryRun"` / `"production"`) and evaluates the same PolicyRules, ensuring that the policy applied to dryRun responses and actual storage paths is always consistent.
 
 **recall() pipeline — fields pick position:**
 
@@ -60,6 +81,9 @@ recall(query)
   ├── L3 PostgreSQL full-text search (morpheme)
   ├── L4 Cross-Encoder Reranker (top 30 from RRF)
   ├── RRF merge (k=60)
+  ├── SearchScope.applyTo() filter — workspace/caseId/resolutionStatus/phase/affect consistency
+  │     All layers inside _executeSearch() share the same SearchScope instance
+  │     No post-processing correction needed after _executeSearch() completes
   ├── token budget truncation (tokenBudget)
   ├── valid_to filter
   ├── explanations (ExplanationBuilder.annotate)
@@ -68,10 +92,15 @@ recall(query)
   ├── pickFields(query.fields)  — sparse fieldset
   │     when query.fields is not specified, all fields returned (backward compat)
   │     L1/L2/RRF cache stages retain full fields; pick is applied only at final return
-  └── SearchEventRecorder.record() — event recording
+  └── commitSearchSideEffects() → returns _searchEventId
+        Delegated to SearchSideEffects module. Search event persistence + SearchParamAdaptor learning.
+        SearchScope filter is already applied inside _executeSearch(), so no additional
+        post-processing correction is needed here; only searchEventId is returned.
 ```
 
 `pickFields` removes fields outside the 17-item whitelist (`id, content, type, importance, topic, ...`). It is not applied to cache stages (L1 warm hits, RRF intermediate objects) to preserve cache efficiency.
+
+**SearchScope contract:** The `SearchScope.fromQuery(sq)` static factory creates a scope instance from the normalized sq returned by `_buildSearchQuery()`. The `scope.applyTo(fragment)` method checks workspace, caseId, resolutionStatus, phase, and affect simultaneously and returns false to exclude a fragment from results. HotCache, L3, and graph call sites all reference the same instance, ensuring consistent filtering across layers. Prior to v4.0.0, a separate post-processing correction step ran after `_executeSearch()`. The introduction of SearchScope eliminated this step.
 
 ---
 
@@ -91,25 +120,32 @@ In environments where Gemini CLI is not installed, the worker starts but skips e
 
 Fragment storage flow: When `remember()` is called, ConflictResolver's `autoLinkOnRemember` immediately creates `related` links with fragments sharing the same topic. When the `embedding_ready` event fires, GraphLinker adds semantic similarity-based links. MemoryConsolidator is a separate periodic pipeline that maintains this link network.
 
-An 18-step maintenance pipeline that runs when the memory_consolidate tool is invoked or the internal scheduler triggers (every 6 hours, adjustable via CONSOLIDATE_INTERVAL_MS).
+A maintenance pipeline that runs when the memory_consolidate tool is invoked or the internal scheduler triggers (every 6 hours, adjustable via CONSOLIDATE_INTERVAL_MS).
 
-- **TTL tier transitions**: hot -> warm -> cold demotion based on access frequency and elapsed time. warm -> permanent promotion only targets fragments with importance>=0.8 and `quality_verified IS DISTINCT FROM FALSE` -- a Circuit Breaker pattern that blocks permanent tier entry for fragments explicitly judged negative (FALSE) (TRUE=normal, NULL+is_anchor=anchor fallback, NULL+importance>=0.9=offline fallback). Permanent-tier fragments with is_anchor=false + importance<0.5 + 180 days without access are demoted to cold (parole)
-- **Importance decay**: Batch-processed via a single PostgreSQL `POWER()` SQL. Formula: `importance * 2^(-dt / halfLife)`. dt is computed from `COALESCE(last_decay_at, accessed_at, created_at)`. After application, `last_decay_at = NOW()` is set (idempotency). Per-type half-lives -- procedure:30d, fact:60d, decision:90d, error:45d, preference:120d, relation:90d, others:60d. `is_anchor=true` excluded, minimum 0.05 guaranteed
-- **Expired fragment deletion (multi-dimensional GC)**: Judged by 5 composite conditions. (a) utility_score < 0.15 + 60 days inactive, (b) isolated fact/decision fragments (0 access, 0 links, 30+ days, importance < 0.2), (c) legacy compatibility condition (importance < 0.1, 90 days), (d) resolved error fragments (`[resolved]` prefix + 30+ days + importance < 0.3), (e) NULL type fragments (gracePeriod elapsed + importance < 0.2). Fragments within the 7-day gracePeriod are protected. Max 50 deletions per cycle. `is_anchor=true` and `permanent` tier excluded
-- **Duplicate merging**: Fragments with identical content_hash are merged into the most important one. Links and access stats are consolidated
-- **Missing embedding backfill**: Triggers async embedding generation for fragments with NULL embedding
-- **Retroactive auto-linking (5.5)**: GraphLinker.retroLink() processes up to 20 orphan fragments that have embeddings but no links, automatically creating relationships
-- **utility_score recalculation**: Updated via `importance * (1 + ln(max(access_count, 1))) / age_months^0.3`. Dividing by the 0.3 power of age (months) gradually lowers older fragments' scores (1 month / 1.00, 12 months / 2.29, 24 months / 2.88). Then registers fragments with ema_activation>0.3 AND importance<0.4 for MemoryEvaluator re-evaluation
-- **Auto anchor promotion**: Promotes fragments with access_count >= 10 + importance >= 0.8 to `is_anchor=true`
-- **Incremental contradiction detection (3-stage hybrid)**: For new fragments since the last check, extracts pairs with pgvector cosine similarity > 0.85 against existing fragments in the same topic (Stage 1). NLI classifier (mDeBERTa ONNX) determines entailment/contradiction/neutral (Stage 2) -- high-confidence contradictions (conf >= 0.8) are resolved immediately without Gemini, clear entailments pass through immediately. Only NLI-uncertain cases (numerical/domain contradictions) escalate to Gemini CLI (Stage 3). On confirmation, `contradicts` link + temporal logic resolution (older fragment importance reduced + `superseded_by` link). Resolution results are automatically recorded as `decision` type fragments (audit trail) -- trackable via `recall(keywords=["contradiction","resolved"])`. When CLI is unavailable, pairs with similarity > 0.92 are queued in a Redis pending queue
-- **Pending contradiction post-processing**: When Gemini CLI becomes available, up to 10 items are dequeued for re-evaluation
-- **Feedback report generation**: Aggregates tool_feedback/task_feedback data to produce per-tool usefulness reports
-- **Feedback-adaptive importance correction (10.5)**: Combines the last 24 hours of tool_feedback data with session recall history to incrementally adjust importance. `sufficient=true`: +5%, `sufficient=false`: -2.5%, `relevant=false`: -5%. Criteria: fragments matching session_id, max 20/session, lr=0.05, clipped to [0.05, 1.0]. is_anchor=true fragments excluded
-- **Redis index cleanup + stale fragment collection**: Removes orphaned keyword indexes and returns a list of fragments past their verification cycle
-- **session_reflect noise cleanup**: Among topic='session_reflect' fragments, preserves only the latest 5 per type and deletes the rest with 30+ days age + importance < 0.3 (max 30 per cycle)
-- **Supersession batch detection**: For fragment pairs with the same topic + type and embedding similarity in the 0.7~0.85 range, Gemini CLI determines if a supersession relationship exists. On confirmation, superseded_by link + valid_to set + importance halved. Operates complementarily to GraphLinker's >= 0.85 range
-- **Decay application (EMA dynamic half-life)**: Applies exponential decay to all fragments via PostgreSQL `POWER()` batch SQL. Fragments with high `ema_activation` get their half-life extended up to 2x (`computeDynamicHalfLife`). Formula: `importance * 2^(-dt / (halfLife * clamp(1 + ema * 0.5, 1, 2)))`
-- **EMA batch decay**: Periodically reduces ema_activation of long-unaccessed fragments. 60+ days unaccessed -> ema_activation=0 (reset), 30-60 days unaccessed -> ema_activation*0.5 (halved). is_anchor=true fragments excluded. Prevents long-idle fragments from retaining past boost values despite no search exposure
+Stages are declared as a `stageDefs` array. Adding a new stage requires only a single push to the array; `TOTAL_STAGES = stageDefs.length` is computed automatically, and progress event counts update accordingly. The current 22 stages execute in the following order.
+
+1. `ttl_transition` — hot -> warm -> cold demotion. warm -> permanent promotion targets only fragments with importance>=0.8 and `quality_verified IS DISTINCT FROM FALSE` (Circuit Breaker pattern). Permanent fragments with is_anchor=false + importance<0.5 + 180 days without access are demoted to cold (parole)
+2. `importance_decay` — single PostgreSQL `POWER()` batch SQL. Formula: `importance * 2^(-dt / halfLife)`. dt from `COALESCE(last_decay_at, accessed_at, created_at)`. Per-type half-lives: procedure:30d, fact:60d, decision:90d, error:45d, preference:120d, relation:90d, others:60d. Excludes `is_anchor=true`, minimum 0.05 guaranteed
+3. `expired_delete` — 5-condition composite GC. (a) utility_score < 0.15 + 60 days inactive, (b) isolated fact/decision fragments, (c) legacy condition (importance < 0.1, 90 days), (d) resolved error fragments, (e) NULL type fragments. 7-day gracePeriod protection, max 50 per cycle, excludes `is_anchor=true` and `permanent` tier
+4. `gc_preview` — counts GC candidates by type; written to results.gcCandidatesByType as a Map
+5. `split_long_fragments` — splits over-length fragments
+6. `merge_duplicates` — merges duplicates by content_hash. Group key is `(key_id, workspace, content_hash)`. Master key (key_id IS NULL) fragments are excluded from auto-merge. Post-GROUP BY scope mismatch assertion re-validates to block cross-tenant merges
+7. `semantic_dedup` — semantic deduplication for KNN cosine >= 0.92 within topic and key_id scope
+8. `compress_old_fragments` — groups long-unaccessed low-importance fragments by topic, then KNN-compresses
+9. `embeddings_backfill` — async embedding generation for fragments with NULL embedding
+10. `retro_link` — GraphLinker.retroLink() retroactively links up to 20 orphan fragments (have embedding, no links)
+11. `utility_score_update` — updates scores with `importance * (1 + ln(max(access_count,1))) / age_months^0.3`
+12. `requeue_high_ema` — registers ema_activation>0.3 AND importance<0.4 fragments for MemoryEvaluator re-evaluation
+13. `promote_anchors` — promotes fragments with access_count >= 10 + importance >= 0.8 to `is_anchor=true`
+14. `detect_contradictions` — 3-stage hybrid contradiction detection. pgvector cosine > 0.85 candidate extraction -> mDeBERTa NLI -> Gemini CLI escalation. Results returned as separate `nliResolvedDirectly` and `nliSkippedAsNonContra` counts
+15. `detect_supersessions` — Gemini CLI judges supersession relationships for fragment pairs with embedding similarity 0.7~0.85. Operates complementarily to GraphLinker's >= 0.85 range
+16. `process_pending_contradictions` — when Gemini CLI is available, dequeues up to 10 items from Redis pending queue for re-evaluation
+17. `feedback_report` — generates aggregated usefulness report from tool_feedback/task_feedback
+18. `feedback_calibration` — incremental importance adjustment based on last 24 hours of feedback. `sufficient=true`: +5%, `sufficient=false`: -2.5%, `relevant=false`: -5%. lr=0.05, clipped to [0.05, 1.0]. Excludes `is_anchor=true`
+19. `prune_keyword_indexes` — removes orphaned Redis keyword indexes
+20. `collect_stale_fragments` — collects fragments past their verification cycle; written to results.stale_fragments
+21. `purge_stale_reflections` — among topic='session_reflect' fragments, keeps the latest 5 per type and deletes the rest with 30+ days age + importance < 0.3 (max 30 per cycle)
+22. `gc_search_events` — garbage-collects old search events
 
 ### compressOldFragments (KNN Batch Parallelization)
 
@@ -404,6 +440,7 @@ When a verification event is added to case_events, atomically adjusts the import
 - Concurrency: UPDATE FROM is atomic via row locking. No read-modify-write race condition.
 - Trigger: fire-and-forget after `CaseEventStore.append()` COMMIT
 - Singleton: `getBackprop()` (shared for server lifetime)
+- Environment variable: `MEMENTO_CASE_BACKPROP_ENABLED=true` is required to activate (default: false). Also exported as the `CASE_BACKPROP_ENABLED` constant from `lib/config.js`. When disabled, the backprop call after append() is treated as a no-op.
 
 ### SearchParamAdaptor (FragmentSearch -> SearchParamAdaptor)
 
@@ -641,3 +678,42 @@ const output = await this._pipeline(text, { pooling: "mean", normalize: true });
 | Reranker (minilm) | Xenova/ms-marco-MiniLM-L-6-v2 | ~80 MB |
 | Reranker (bge-m3) | onnx-community/bge-reranker-v2-m3-ONNX | ~280 MB |
 | NLIClassifier | Xenova/mDeBERTa-v3-base-mnli-xnli | ~250 MB |
+
+---
+
+## lib/storage Adapter Layer
+
+`lib/storage/index.js` returns a storage adapter singleton based on the `MEMENTO_STORAGE` environment variable.
+
+| Value | Adapter | Status |
+|-|-|-|
+| `pgvector` (default) | `PgVectorStore` | Production |
+| `sqlite-vec` | `SqliteVecStore` | Planned for v4.1, currently stub |
+
+All adapters implement a common interface of 5 methods + 2 properties.
+
+| Member | Kind | Description |
+|-|-|-|
+| `query(sql, params?)` | method | Executes SQL on the primary pool. Returns `{rows, rowCount}` |
+| `queryAsAgent(agentId, sql, params?)` | method | Executes SQL with `SET LOCAL app.current_agent_id` and vector type support enabled |
+| `transaction(fn)` | method | Runs `fn(client)` callback wrapped in BEGIN/COMMIT/ROLLBACK. Returns fn's return value |
+| `migrate(filePath, opsClass)` | method | Reads the SQL file and delegates to `opsClass.apply(sql)`. Returns the count of applied SQL statements |
+| `close()` | method | Closes the connection pool or file handle |
+| `engine` | property | `'pgvector'` or `'sqlite-vec'`. Read-only |
+| `vectorSupport` | property | `'native'` (engine-native vector type and indexes) / `'extension'` (external extension) / `'none'` |
+
+`getStorage()` returns the adapter using a singleton pattern. `resetStorageSingleton()` is available for test environments only and must not be called from production code.
+
+---
+
+## LLM Dispatcher
+
+`lib/llm/index.js` exports `dispatchChain(chain, prompt, options, deps)`.
+
+```js
+export async function dispatchChain(chain, prompt, options = {}, deps = {})
+```
+
+The chain is an array of provider configurations. Providers are tried in order; on success the result is returned immediately. On failure (429, semaphore timeout, error), execution moves to the next fallback provider.
+
+**Concurrency control:** `getSemaphore(chainKey, limit, waitMs)` acquires a per-provider independent semaphore. The chainKey is composed of `provider|baseUrl|model|apiKeyHash`. Exceeding `LLM_CONCURRENCY_WAIT_MS` (default 30000ms) records the current provider as failed and tries the next. Chain deadline is calculated from `deps.startedAt` and `LLM_CHAIN_TIMEOUT_MS`; when remaining time reaches 0 the chain terminates immediately.

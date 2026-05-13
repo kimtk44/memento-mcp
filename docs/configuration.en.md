@@ -40,6 +40,14 @@
 | ENABLE_SPREADING_ACTIVATION | false | Enable SpreadingActivation. When true, the contextText parameter in recall proactively activates related fragments. Recommended to measure latency impact before enabling |
 | ENABLE_PATTERN_ABSTRACTION | false | Enable pattern abstraction. Planned for activation after sufficient data accumulation (not yet implemented) |
 | MEMENTO_REMEMBER_ATOMIC | false | When true, atomizes the quota check + INSERT in remember() into a single transaction. Sequence: BEGIN → api_keys FOR UPDATE (quota re-validation) → INSERT → COMMIT, fully eliminating TOCTOU. false (default) performs only a pre-check and is appropriate for environments with low concurrent request volume |
+| MEMENTO_CASE_BACKPROP_ENABLED | false | When true, enables CaseRewardBackprop, which back-propagates tool_feedback reward signals along case_id fragment chains. Adjust importance scores of cause fragments based on outcome quality |
+| MEMENTO_STORAGE | pgvector | Storage adapter selection. `pgvector` (default, PostgreSQL + pgvector). Additional adapters can be registered in `lib/storage/`. Changing this value requires all fragments to be re-indexed in the target backend |
+
+#### Migration Linting
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| MIGRATION_LINT_FROM | (max existing + 1) | Lower-bound migration file number for `npm run lint:migrations`. Files with a number below this value are excluded from the body-only convention check. Useful for gradually adopting the convention on an existing codebase |
 
 #### CLI Remote Access
 
@@ -764,9 +772,9 @@ Using an existing DB connection:
 DATABASE_URL=postgresql://user:pass@host:port/db npm run test:e2e
 ```
 
-### Full CI (DB required)
+### Full CI (DB + Redis required)
 ```bash
-npm run test:ci          # npm test + test:e2e
+npm run test:ci          # npm test && npm run test:integration
 ```
 
 ---

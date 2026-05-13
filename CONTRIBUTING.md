@@ -85,9 +85,11 @@ after(async () => {
 
 ## Pull Request Checklist
 
-- [ ] `npm test` passes (0 failures)
+- [ ] `npm run test:ci` passes (`npm test && npm run test:integration`) — CI single gate
 - [ ] `npx eslint . --max-warnings 0` passes
-- [ ] New migration file if DB schema changed
+- [ ] New migration file if DB schema changed; run `npm run lint:migrations` to verify body-only convention (see `docs/migration-conventions.md`)
+- [ ] `docs/features.md` ledger updated for any new or removed feature
+- [ ] `docs/concurrency.md` updated if a new write path is introduced
 - [ ] CHANGELOG.md updated
 - [ ] SKILL.md updated if tool parameters changed
 - [ ] 신규 unit 테스트에 `assertCleanShutdown()` 추가 (lifecycle 가드 — `tests/README.md` 참조)

@@ -155,6 +155,14 @@ Since v1.8.0, automatic migration is supported. Instead of running each file man
 DATABASE_URL=postgresql://user:pass@host:port/dbname npm run migrate
 ```
 
+When adding new migration files, verify body-only convention compliance before running migrate:
+
+```bash
+npm run lint:migrations
+```
+
+See [docs/migration-conventions.md](migration-conventions.md) for convention details.
+
 > **migration-034-v2.16.0-bundle CONCURRENTLY option**: migration-034-v2.16.0-bundle runs inside a transaction, so it uses `CREATE UNIQUE INDEX` (not CONCURRENTLY). For large production tables (millions of fragments) where minimizing lock time is critical, run the two statements below manually before `npm run migrate`. The IF NOT EXISTS guard ensures they are safely skipped during automatic execution.
 >
 > ```sql
@@ -230,11 +238,15 @@ cp .env.example .env
 Additional environment variables:
 
 ```
-LLM_PRIMARY             - Primary LLM provider (default: gemini-cli). Options: gemini-cli, codex, copilot, anthropic, etc.
-LLM_FALLBACKS           - JSON array of fallback providers: [{"provider":"anthropic","apiKey":"...","model":"claude-opus-4-6"}]
+LLM_PRIMARY                   - Primary LLM provider (default: gemini-cli). Options: gemini-cli, codex, copilot, anthropic, etc.
+LLM_FALLBACKS                 - JSON array of fallback providers: [{"provider":"anthropic","apiKey":"...","model":"claude-opus-4-6"}]
+MEMENTO_REMEMBER_ATOMIC       - When true, atomizes quota check + INSERT in remember() into a single transaction to eliminate TOCTOU (default: false)
+MEMENTO_CASE_BACKPROP_ENABLED - When true, enables CaseRewardBackprop — reward back-propagation per case_id (default: false)
+MEMENTO_STORAGE               - Storage adapter selection. pgvector (default). See lib/storage/ for additional adapters
+MIGRATION_LINT_FROM           - Lower-bound migration number for lint:migrations checks. Defaults to max existing number + 1 when unset
 ```
 
-For the full list of environment variables, see [Configuration — Environment Variables](configuration.md#environment-variables).
+For the full list of environment variables, see [Configuration — Environment Variables](configuration.en.md#environment-variables).
 
 ---
 

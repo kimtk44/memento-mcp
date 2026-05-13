@@ -25,32 +25,47 @@ server.js  (HTTP server)
     +-- lib/memory/
             +-- MemoryManager.js          Business logic orchestration facade (259 lines, singleton). Routes 15 public methods to 4 processors via 1-line delegation. Shared properties synchronized via _installSharedSync
             +-- processors/
-            |   +-- MemoryRememberer.js   Dedicated remember() (~695 lines). Includes R12 TDZ hotfix: atomic branch relocated after fragment creation
+            |   +-- MemoryRememberer.js   Dedicated remember() (~695 lines). _runPolicyGate helper evaluates dryRun/atomic/non-atomic branches at the same point. Includes R12 TDZ hotfix
             |   +-- MemoryRecaller.js     Dedicated recall() (~405 lines). fields pick step, depth filter, CBR path
             |   +-- MemoryReflector.js    Dedicated reflect() (~89 lines). session summary->fragment conversion
             |   +-- MemoryLinker.js       Dedicated link()/forget()/amend() (~80 lines)
+            +-- read/                     Search layer modules (v3.7.0 subdirectory split)
+            |   +-- FragmentSearch.js     3-layer search orchestration (structural: L1->L2, semantic: L1->L2||L3 RRF merge). Legacy stub re-export: lib/memory/FragmentSearch.js
+            |   +-- CaseRecall.js         Dedicated caseMode: true path. Returns (goal, events[], outcome) triple per case_id
+            |   +-- LinkedFragmentLoader.js Bulk linked fragment load (1-hop neighbor batch query)
+            |   +-- RecallSuggestionEngine.js Analyzes recall results and generates _suggestion meta field
+            |   +-- SearchScope.js        Search coherence filter contract (v4.0.0). Encapsulates workspace/caseId/resolutionStatus/phase/affect/keyId. applyTo(fragment) -> boolean. Each call site (L1 HotCache, L2, L3, Graph) filters individually. _executeSearch post-processing correction removed
+            |   +-- SearchSideEffects.js  Search side-effect isolation module (v3.9.0). commitSearchSideEffects() synchronously returns searchEventId; fire-and-forgets SearchParamAdaptor.recordOutcome()
+            +-- write/                    Write layer modules (v3.7.0 subdirectory split)
+            |   +-- FragmentWriter.js     Fragment writes (insert, update, delete, incrementAccess, touchLinked). Legacy stub re-export: lib/memory/FragmentWriter.js
+            +-- link/                     Link layer modules (v3.7.0 subdirectory split)
+            |   +-- ReconsolidationEngine.js Dynamic fragment_links weight/confidence update engine (reinforce/decay/quarantine/restore/soft_delete + history recording). Legacy stub re-export: lib/memory/ReconsolidationEngine.js
+            +-- consolidate/              Consolidation layer modules (v3.7.0 subdirectory split)
+            |   +-- MemoryConsolidator.js 21-stage declarative maintenance pipeline (stageDefs array, TOTAL_STAGES = stageDefs.length). NLI + Gemini hybrid. Legacy stub re-export: lib/memory/MemoryConsolidator.js
+            |   +-- FragmentGC.js         Fragment expiration/deletion, exponential decay, TTL tier transitions (permanent parole + EMA batch decay). Legacy stub re-export: lib/memory/FragmentGC.js
+            +-- embedding/                Embedding layer modules (v3.7.0 subdirectory split)
+            |   +-- EmbeddingWorker.js    Redis queue-based async embedding worker (EventEmitter). Legacy stub re-export: lib/memory/EmbeddingWorker.js
+            |   +-- EmbeddingCache.js     Query embedding Redis cache (emb:q:{sha256} key, 1-hour TTL, fault-isolated). Legacy stub re-export: lib/memory/EmbeddingCache.js
+            |   +-- MorphemeIndex.js      Morpheme-based L3 fallback index. Legacy stub re-export: lib/memory/MorphemeIndex.js
+            +-- signals/                  Signal layer modules (v3.7.0 subdirectory split)
+            |   +-- SpreadingActivation.js Async activation propagation based on contextText (ACT-R model, keywords GIN seed -> 1-hop graph spread, 10-min TTL cache). Legacy stub re-export: lib/memory/SpreadingActivation.js
+            |   +-- CaseRewardBackprop.js  case verification event -> evidence fragment importance atomic backpropagation. Returns immediately when MEMENTO_CASE_BACKPROP_ENABLED is unset. Legacy stub re-export: lib/memory/CaseRewardBackprop.js
+            |   +-- NLIClassifier.js       NLI-based contradiction classifier (mDeBERTa ONNX, CPU). Legacy stub re-export: lib/memory/NLIClassifier.js
             +-- ContextBuilder.js         Dedicated context() logic. Assembles Core/Working/Anchor Memory composite context
             +-- ReflectProcessor.js       Dedicated reflect() logic. summary->fragment conversion, episode creation, Working Memory cleanup
             +-- BatchRememberProcessor.js Dedicated batchRemember() logic. Phase A (validation) -> B (INSERT) -> C (post-processing) 3-stage
             +-- QuotaChecker.js           API key fragment quota check (fragment_limit based)
             +-- RememberPostProcessor.js  remember() post-processing pipeline (embedding/morpheme/linking/assertion/temporal linking/evaluation queue/ProactiveRecall)
-            +-- EmbeddingCache.js         Query embedding Redis cache (emb:q:{sha256} key, 1-hour TTL, fault-isolated)
             +-- FragmentFactory.js        Fragment creation, validation, PII masking
             +-- FragmentStore.js          PostgreSQL CRUD facade (delegates to FragmentReader + FragmentWriter)
             +-- FragmentReader.js         Fragment reads. `getById(id, agentId, keyId, groupKeyIds)` -- groupKeyIds parameter enables single-call lookup of fragments belonging to same-group keys. `getByIds`, `getHistory`, `searchByKeywords`, `searchBySemantic`
-            +-- FragmentWriter.js         Fragment writes (insert, update, delete, incrementAccess, touchLinked)
-            +-- FragmentSearch.js         3-layer search orchestration (structural: L1->L2, semantic: L1->L2||L3 RRF merge)
             +-- FragmentIndex.js          Redis L1 index management, getFragmentIndex() singleton factory
-            +-- EmbeddingWorker.js        Redis queue-based async embedding worker (EventEmitter)
             +-- GraphLinker.js            Embedding-ready event subscriber for auto-linking + retroactive linking + Hebbian co-retrieval linking
-            +-- MemoryConsolidator.js     18-step maintenance pipeline (NLI + Gemini hybrid)
             +-- MemoryEvaluator.js        Async Gemini CLI quality evaluation worker (singleton)
-            +-- NLIClassifier.js          NLI-based contradiction classifier (mDeBERTa ONNX, CPU)
             +-- SessionActivityTracker.js Per-session tool call/fragment activity tracking (Redis)
             +-- ConflictResolver.js       Conflict detection, supersede, autoLinkOnRemember (topic-based structural linking)
             +-- SessionLinker.js          Session fragment consolidation, auto-linking, cycle detection
             +-- LinkStore.js              Fragment link management (fragment_links CRUD + RCA chains)
-            +-- FragmentGC.js             Fragment expiration/deletion, exponential decay, TTL tier transitions (permanent parole + EMA batch decay)
             +-- ConsolidatorGC.js         Feedback reports, stale fragment collection/cleanup, long fragment splitting, feedback-based correction
             +-- ContradictionDetector.js  Contradiction detection, supersede relation detection, pending queue processing
             +-- AutoReflect.js            Session-end auto reflect orchestrator
@@ -59,9 +74,12 @@ server.js  (HTTP server)
             +-- SearchEventAnalyzer.js    Search event analysis, query pattern tracking (reads from SearchEventRecorder)
             +-- SearchEventRecorder.js    FragmentSearch.search() result to search_events table recording
             +-- EvaluationMetrics.js      tool_feedback-based implicit Precision@5 and downstream task success rate computation
-            +-- MorphemeIndex.js          Morpheme-based L3 fallback index
-            +-- TemporalLinker.js         Time-based auto-linking (same topic ±24h, weight=max(0.3, 1-hours/24), max 5 links)
+            +-- TemporalLinker.js         Time-based auto-linking (same topic +-24h, weight=max(0.3, 1-hours/24), max 5 links)
             +-- Reranker.js               Cross-Encoder reranking (external HTTP if RERANKER_URL set, otherwise ONNX in-process; model selectable via RERANKER_MODEL: minilm/bge-m3)
+            +-- EpisodeContinuityService.js Inserts case_events milestone_reached + preceded_by edge after reflect() (idempotency_key-based dedup)
+            +-- CaseEventStore.js         Semantic milestone log (case_events CRUD, DAG edges, evidence join)
+            +-- SearchParamAdaptor.js     key_id x query_type x hour minSimilarity online learning, atomic UPSERT (116 lines)
+            +-- HistoryReconstructor.js   case_id/entity-based narrative reconstruction (ordered_timeline, causal_chains, unresolved_branches)
             +-- memory-schema.sql         PostgreSQL schema definition
             +-- migration-001-temporal.sql Temporal schema migration (valid_from/to/superseded_by)
             +-- migration-002-decay.sql   Decay idempotency migration (last_decay_at)
@@ -158,6 +176,24 @@ lib/logging/
 +-- audit.js           Audit logging and access history recording
 ```
 
+The storage adapter layer is separated into `lib/storage/` (v4.0.0).
+
+```
+lib/storage/
++-- index.js         getStorage() factory singleton. Selects adapter via MEMENTO_STORAGE env var
+|                    pgvector (default) -> PgVectorStore / sqlite-vec -> SqliteVecStore
+|                    Unknown values fall back to pgvector without warning
++-- PgVectorStore.js PostgreSQL + pgvector adapter. Wraps lib/tools/db.js getPrimaryPool() and
+|                    queryWithAgentVector() to conform to the StorageAdapter interface
+|                    engine='pgvector', vectorSupport='native'
++-- SqliteVecStore.js SQLite + sqlite-vec adapter stub (implementation planned for v4.1)
+                     engine='sqlite-vec', vectorSupport='extension'
+```
+
+StorageAdapter common interface: `query(sql, params)`, `queryAsAgent(agentId, sql, params)`, `transaction(fn)`, `migrate(filePath, opsClass)`, `close()`, `engine`, `vectorSupport`.
+
+Existing lib/tools/db.js call sites will be migrated to getStorage() in v4.1. At present, lib/tools/db.js continues to provide the primary pool and batch pool directly.
+
 Tool implementations are separated into `lib/tools/`.
 
 ```
@@ -165,7 +201,7 @@ lib/tools/
 +-- memory.js    16 MCP tool handlers
 +-- reconstruct.js  reconstruct_history, search_traces tool handlers (Narrative Reconstruction)
 +-- memory-schemas.js  Tool schema definitions (inputSchema)
-+-- db.js        PostgreSQL connection pool, RLS-applied query helper (not exposed via MCP)
++-- db.js        PostgreSQL connection pool, RLS-applied query helper (not exposed via MCP). getPrimaryPool(), getBatchPool(), queryWithAgentVector()
 +-- db-tools.js  MCP DB tool handlers (per-tool logic split from db.js)
 +-- embedding.js OpenAI text embedding generation
 +-- stats.js     Access statistics collection and storage
@@ -854,7 +890,7 @@ Passing `caseMode: true` to the recall tool activates the CaseRecall path. It re
 
 ### CaseRewardBackprop
 
-`lib/memory/CaseRewardBackprop.js`. When `verification_passed` or `verification_failed` events are inserted into case_events, atomically backpropagates importance to evidence fragments via fragment_evidence.
+`lib/memory/signals/CaseRewardBackprop.js`. When `verification_passed` or `verification_failed` events are inserted into case_events, atomically backpropagates importance to evidence fragments via fragment_evidence. Returns immediately when `MEMENTO_CASE_BACKPROP_ENABLED` is not set to `"true"`.
 
 - `verification_passed` -> evidence fragment `importance += 0.15` (clamped to 1.0 upper bound)
 - `verification_failed` -> evidence fragment `importance -= 0.10` (clamped to 0.0 lower bound)
@@ -866,7 +902,7 @@ Passing `caseMode: true` to the recall tool activates the CaseRecall path. It re
 
 A link strength update engine that applies tool_feedback signals to fragment_links weight/confidence in real time.
 
-`lib/memory/ReconsolidationEngine.js` + `link_reconsolidations` table.
+`lib/memory/link/ReconsolidationEngine.js` + `link_reconsolidations` table.
 
 Activated by setting environment variable `ENABLE_RECONSOLIDATION=true`.
 
@@ -898,7 +934,7 @@ This flow implements Hebbian-principle self-supervised link adjustment.
 
 An async activation propagation engine that proactively boosts `ema_activation` of related fragments when `contextText` is passed to a recall call.
 
-`lib/memory/SpreadingActivation.js`.
+`lib/memory/signals/SpreadingActivation.js`.
 
 Activated by setting environment variable `ENABLE_SPREADING_ACTIVATION=true`.
 
@@ -1043,7 +1079,22 @@ LocalTransformersEmbedder.generate(text)
 
 For detailed migration steps, see [docs/embedding-local.md](embedding-local.md).
 
-### LLM Dispatcher -- CLI Providers
+### LLM Dispatcher -- dispatchChain and CLI Providers
+
+In v3.4.0, `dispatchChain(chain, prompt, options, deps)` was split into a separately exported function in `lib/llm/index.js`. `llmJson()` handles chain building and `redactPrompt()` processing, then delegates to this function.
+
+```
+llmJson(prompt, options)
+    |
+    +-- redactPrompt(prompt) -> safePrompt
+    +-- buildChain(LLM_PRIMARY, LLM_FALLBACKS) -> chain
+    +-- dispatchChain(chain, safePrompt, options, { startedAt })
+            |
+            +-- Sequential provider attempts (semaphore + circuit breaker)
+            +-- Return first successful response / throw Error if all fail
+```
+
+The five existing callers (AutoReflect, MorphemeIndex, ConsolidatorGC, ContradictionDetector, MemoryEvaluator) continue to use `llmJson` with no code changes required.
 
 The `codex-cli` provider carries `model` / `timeoutMs` settings through to the actual CLI call. `qwen-cli` is also supported as a provider.
 
@@ -1113,6 +1164,88 @@ Response returned (fragments + _suggestion)
 - Stored via the `affect` parameter in remember(), filtered via the `affect` parameter in recall()
 
 ---
+
+## lib/memory 6-Subdirectory Structure (v3.7.0)
+
+In v3.7.0, files under `lib/memory/` were split into 6 subdirectories by functional domain. Legacy paths are kept as stub re-exports for backward compatibility.
+
+```
+lib/memory/
++-- read/          FragmentSearch, CaseRecall, LinkedFragmentLoader, RecallSuggestionEngine, SearchScope (v4.0), SearchSideEffects (v3.9)
++-- write/         FragmentWriter
++-- link/          ReconsolidationEngine
++-- consolidate/   MemoryConsolidator, FragmentGC
++-- embedding/     EmbeddingWorker, EmbeddingCache, MorphemeIndex
++-- signals/       SpreadingActivation, CaseRewardBackprop, NLIClassifier
+```
+
+Legacy paths such as `lib/memory/FragmentSearch.js` are retained as stub files that re-export from their respective subdirectory module, so external import paths require no changes.
+
+## SearchScope Contract (v4.0.0)
+
+`lib/memory/read/SearchScope.js`. Encapsulates filter conditions across all search layers in a single object.
+
+Encapsulated fields: `workspace`, `caseId`, `resolutionStatus`, `phase`, `affect`, `keyId`.
+
+`SearchScope.fromQuery(sq)` static factory creates an instance from the normalized query returned by `_buildSearchQuery()`. `applyTo(fragment) -> boolean` performs per-fragment coherence checking.
+
+Prior to v4.0.0, workspace/affect corrections were applied in a `_executeSearch` post-processing step. From v4.0.0, each call site (L1 HotCache, L2, L3, Graph) calls `scope.applyTo(fragment)` directly, and `_executeSearch` post-processing correction has been removed.
+
+## SearchSideEffects Side-Effect Isolation (v3.8.0 + v3.9.0)
+
+In v3.8.0, the search event recording and SearchParamAdaptor learning logic inlined inside FragmentSearch was extracted to `lib/memory/read/SearchSideEffects.js`. In v3.9.0, the synchronous searchEventId return contract was finalized.
+
+`commitSearchSideEffects(query, sq, cleanResult, ctx) -> Promise<string|null>`:
+- `recordSearchEvent(searchEvent)` await -- synchronously returns searchEventId so the caller can attach `_meta.searchEventId` to the response (tool_feedback FK contract)
+- `SearchParamAdaptor.recordOutcome()` -- fire-and-forget
+
+FragmentSearch focuses solely on pipeline result generation; side effects are explicitly separated by this single function call.
+
+## Consolidator 21-Stage Declarative Pipeline (v3.3.0)
+
+`lib/memory/consolidate/MemoryConsolidator.js`. The stage list is declared as a `stageDefs[]` array with `TOTAL_STAGES = stageDefs.length` computed automatically. Adding a new stage requires only pushing one entry; progress calculation and emit are reflected automatically.
+
+Current 21 stages (in order):
+
+| # | name | Description |
+|---|---|---|
+| 1 | ttl_transition | TTL tier transition |
+| 2 | importance_decay | Importance decay |
+| 3 | expired_delete | Expired fragment deletion |
+| 4 | gc_preview | GC candidate preview |
+| 5 | split_long_fragments | Long fragment splitting |
+| 6 | merge_duplicates | Duplicate merge (GROUP BY key_id, workspace, content_hash) |
+| 7 | semantic_dedup | Semantic deduplication |
+| 8 | compress_old_fragments | Old fragment compression |
+| 9 | embeddings_backfill | Embedding backfill |
+| 10 | retro_link | Retroactive linking |
+| 11 | utility_score_update | utility_score refresh |
+| 12 | requeue_high_ema | Re-queue high-EMA low-quality fragments |
+| 13 | promote_anchors | Anchor promotion |
+| 14 | detect_contradictions | Contradiction detection |
+| 15 | detect_supersessions | Supersede relation detection |
+| 16 | process_pending_contradictions | Pending contradiction processing |
+| 17 | feedback_report | Feedback report generation |
+| 18 | feedback_calibration | Feedback-based calibration |
+| 19 | prune_keyword_indexes | Keyword index cleanup |
+| 20 | collect_stale_fragments | Stale fragment collection |
+| 21 | purge_stale_reflections / gc_search_events | Stale reflect purge / Search event GC |
+
+## _mergeDuplicates Scope (v3.2.2)
+
+`_mergeDuplicates()` detects duplicates grouped by `GROUP BY key_id, workspace, content_hash`. Fragments belonging to the master key (key_id IS NULL) are excluded from automatic merging. Groups with scope mismatches are skipped with a warning log.
+
+## _runPolicyGate Unification (v3.2.2)
+
+`MemoryRememberer._runPolicyGate(fragment, { keyId, mode })`. Mode values are `"dryRun"` or `"production"`. PolicyRules evaluation is performed at the same point across all three branches: dryRun, atomic, and non-atomic. In dryRun mode, only validation_warnings are returned without actual storage.
+
+## CaseRewardBackprop ENV Gate (v3.6.0)
+
+Unless the `MEMENTO_CASE_BACKPROP_ENABLED` environment variable is set to `"true"`, `CaseRewardBackprop.backprop()` returns immediately. Only when the gate is passed does fragment_evidence lookup and importance backpropagation execute.
+
+## migration body-only Convention (v3.5.0 + v3.9.0)
+
+`scripts/migrate.js` no longer rewrites migration file content via regex. The existing 14 migration files were normalized, and new migration files must conform to the body-only convention (pure SQL ending with SET statements and semicolons). The `lint:migrations` script blocks violations in CI.
 
 ## Related Documents
 
