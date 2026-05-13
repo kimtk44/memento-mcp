@@ -2,7 +2,14 @@
 
 AI 에이전트가 Memento MCP 기억 서버를 최대 효율로 활용하기 위한 기술 레퍼런스.
 
-## 현재 버전: v3.1.1
+## 현재 버전: v3.2.2
+
+v3.2.2는 `MemoryRememberer.remember` 경로의 PolicyRules 게이트 평가 시점을 통일하고, `MemoryConsolidator._mergeDuplicates`의 그룹 키를 `(key_id, workspace, content_hash)`로 한정한 patch 릴리즈다. 멀티테넌트 환경에서 중복 병합이 키 경계를 넘지 않으며, atomic remember 경로(`MEMENTO_REMEMBER_ATOMIC=true`)에서도 dryRun과 동일한 시점에 policy gate가 동작한다. 상세 변경 내역은 `CHANGELOG.md`를 참조한다.
+
+v3.2.0~v3.2.1 변경 요약은 다음과 같다.
+
+- v3.2.1: reasoning 모델 응답의 `<think>` 블록 사전 제거를 `parse-json.js`에 도입. 본 SKILL 상단의 기억 도구 사용 규칙 섹션이 추가됐다.
+- v3.2.0: `BatchRememberProcessor` 도입, `EmbeddingWorker`/`MorphemeIndex` 배치 경로 도입, `BATCH_DATABASE_URL` 분리, migration-035 적용.
 
 v3.1.1은 LLM Provider 체인 동시성 제어(concurrency semaphore + 429 cooldown)를 추가한 patch 릴리즈다. Ollama Cloud, fatherless 프록시 등에서 동시 요청 버스트로 인한 HTTP 429 연쇄 실패를 차단한다. 기본값으로 활성화되며 `LLM_CONCURRENCY_ENABLED=false`로 끌 수 있다. v3.1.0 기반 기능(`_meta.*` 경로, `scripts/post-migrate-flexible-embedding-dims.js`)은 그대로 유지된다.
 

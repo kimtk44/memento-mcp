@@ -1,5 +1,37 @@
 # Changelog
 
+## [3.2.2] - 2026-05-13
+
+기존 API·DB 스키마 호환. Breaking change 없음.
+
+### Changed
+
+- `MemoryRememberer.remember`: PolicyRules 게이트 평가를 `_runPolicyGate` 헬퍼로 통일. dryRun·atomic·non-atomic 분기 모두 동일 시점에 평가하며 `validation_warnings` 누적 형식을 일치시킨다. `apiKeyStore` 조회 실패 시 fail-open 동작 유지.
+- `MemoryRememberer._finalizeRemember`: 응답에 `validation_warnings`를 노출하여 atomic·non-atomic 응답 구조를 정합화.
+- `MemoryConsolidator._mergeDuplicates`: 그룹 키를 `(key_id, workspace, content_hash)`로 한정. `WHERE key_id IS NOT NULL`로 master 키는 자동 병합 대상에서 제외한다. linked_to UPDATE와 `store.delete`에 `key_id`를 함께 전달하고, 그룹 동질성 어설션을 추가한다.
+
+### Tests
+
+- `tests/unit/atomic-remember-policy-gate.test.js`: atomic 분기 + hard gate + dryRun 조합 5 케이스 회귀 가드.
+- `tests/unit/consolidator-merge-tenant-scope.test.js`: `_mergeDuplicates` SQL 그룹 키·UPDATE/DELETE 키 조건·어설션 6 케이스 정적 회귀 가드.
+
+---
+
+## [3.2.1] - 2026-05-13
+
+기존 API·DB 스키마 호환. Breaking change 없음.
+
+### Changed
+
+- `lib/llm/util/parse-json.js`: reasoning 모델(MiniMax-M2.7, DeepSeek-R1, Qwen-QwQ 등) 응답의 `<think>...</think>` 블록을 사전 제거 후 4단계 휴리스틱을 적용. 닫힘 태그만 남은 비대칭 응답도 처리한다.
+- `SKILL.md`: 상단에 기억 도구 사용 규칙 섹션을 추가하여 context → recall·remember → reflect 흐름과 Recall-First 원칙을 명문화.
+
+### Tests
+
+- `tests/unit/llm-parse-json.test.js`: `<think>` 블록 5 케이스 추가.
+
+---
+
 ## [3.2.0] - 2026-04-29
 
 기존 API·DB 스키마 호환. Breaking change 없음.
