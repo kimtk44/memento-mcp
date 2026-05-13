@@ -2,9 +2,11 @@
 
 AI 에이전트가 Memento MCP 기억 서버를 최대 효율로 활용하기 위한 기술 레퍼런스.
 
-## 현재 버전: v3.5.0
+## 현재 버전: v3.6.0
 
-v3.5.0은 마이그레이션 파일 규약을 명문화하고 운영 가이드를 정비한 minor 릴리즈다. `scripts/lint-migrations.js`가 신규 파일에 body-only 규약과 파일명 형식을 강제하여 `scripts/migrate.js`의 정규식 재작성 부담이 신규 파일로 확산되지 않게 한다. `docs/operations/agent-worktree.md`와 `docs/operations/upstream-porting.md`가 신설되어 에이전트 워크트리 적체와 upstream port 워크플로우를 단일 페이지에서 참조할 수 있다.
+v3.6.0은 `CaseRewardBackprop`에 `MEMENTO_CASE_BACKPROP_ENABLED` 런타임 토글을 도입한 minor 릴리즈다. 기본 off이며 미설정 시 backprop 호출이 즉시 반환되어 DB·메트릭 영향이 없다. 함께 `docs/features.md`의 실험 플래그 표가 사실대로 정정되어 dual-mode/항상 활성 기능과 ENV 토글 실험 기능이 명확히 분리됐다.
+
+v3.5.0 변경 요약: `scripts/lint-migrations.js` + `docs/migration-conventions.md`로 신규 마이그레이션 규약을 명문화. `docs/operations/agent-worktree.md`, `docs/operations/upstream-porting.md` 운영 가이드 신설.
 
 v3.4.0 변경 요약: LLM dispatcher 코어(`dispatchChain`)를 export로 분리하여 단위 테스트가 실제 구현을 직접 검증. `docs/concurrency.md`와 `docs/features.md`로 운영·리뷰 보조 ledger 신설.
 

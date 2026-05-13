@@ -3,6 +3,7 @@
  *
  * 작성자: 최진호
  * 작성일: 2026-04-07
+ * 수정일: 2026-05-13
  */
 
 import { test, describe, beforeEach, mock } from "node:test";
@@ -22,7 +23,11 @@ mock.module("../../lib/logger.js", {
 const { CaseRewardBackprop } = await import("../../lib/memory/CaseRewardBackprop.js");
 
 describe("CaseRewardBackprop", () => {
-  beforeEach(() => mockQuery.mock.resetCalls());
+  beforeEach(() => {
+    mockQuery.mock.resetCalls();
+    /** 본 스위트는 기능이 활성화된 상태의 동작을 검증한다. 비활성 케이스는 별도 테스트에서 다룬다. */
+    process.env.MEMENTO_CASE_BACKPROP_ENABLED = "true";
+  });
 
   test("verification_passed: atomic UPDATE delta=+0.15, quality_verified=true", async () => {
     mockQuery.mock.mockImplementationOnce(() => Promise.resolve({ rowCount: 2 }));
@@ -71,5 +76,21 @@ describe("CaseRewardBackprop", () => {
 
     await new CaseRewardBackprop().backprop("case-err", "verification_passed", null);
     /** 예외 없이 정상 완료되면 테스트 통과 */
+  });
+
+  test("MEMENTO_CASE_BACKPROP_ENABLED 미설정 → UPDATE 미발행 (no-op)", async () => {
+    delete process.env.MEMENTO_CASE_BACKPROP_ENABLED;
+
+    await new CaseRewardBackprop().backprop("case-disabled", "verification_passed", null);
+
+    assert.strictEqual(mockQuery.mock.callCount(), 0, "기능이 비활성화되면 DB query가 실행되어선 안 된다");
+  });
+
+  test("MEMENTO_CASE_BACKPROP_ENABLED=false 명시 → no-op", async () => {
+    process.env.MEMENTO_CASE_BACKPROP_ENABLED = "false";
+
+    await new CaseRewardBackprop().backprop("case-disabled-2", "verification_passed", null);
+
+    assert.strictEqual(mockQuery.mock.callCount(), 0);
   });
 });

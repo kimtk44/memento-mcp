@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.6.0] - 2026-05-13
+
+기존 API·DB 스키마 호환. Breaking change 없음.
+
+### Added
+
+- `lib/config.js`에 `CASE_BACKPROP_ENABLED` export 추가 (외부 노출용 상수).
+- `MEMENTO_CASE_BACKPROP_ENABLED` 환경변수: `CaseRewardBackprop.backprop`을 활성화한다. 기본 off. 미설정 또는 `false` 시 호출 자체가 즉시 반환되어 DB 쿼리·메트릭 영향이 없다.
+
+### Changed
+
+- `CaseRewardBackprop.backprop`이 매 호출 시 `process.env.MEMENTO_CASE_BACKPROP_ENABLED`를 평가한다(런타임 토글 가능).
+- `docs/features.md` 실험 플래그 표를 사실 정정: NLIClassifier·AutoReflect·ReconsolidationEngine을 실험 표에서 제거하고 dual-mode/항상 활성 기능으로 별도 분류. 실제 ENV 토글이 동작하는 SpreadingActivation·CaseRewardBackprop만 실험 플래그로 유지.
+
+### Tests
+
+- `tests/unit/case-reward-backprop.test.js`: ENV 활성·미설정·`false` 명시 3축을 모두 검증하도록 케이스 2건 추가(총 7건 통과).
+
+---
+
 ## [3.5.0] - 2026-05-13
 
 기존 API·DB 스키마 호환. Breaking change 없음.
