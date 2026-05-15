@@ -216,11 +216,18 @@ Configuration file defined in `config/memory.js`. Ranking weights and stale thre
 ```js
 export const MEMORY_CONFIG = {
   ranking: {
-    importanceWeight    : 0.4,   // Importance weight in time-semantic composite ranking
-    recencyWeight       : 0.3,   // Temporal proximity weight (exponential decay from anchorTime)
-    semanticWeight      : 0.3,   // Semantic similarity weight
-    activationThreshold : 0,     // Always apply composite ranking
-    recencyHalfLifeDays : 30,    // Temporal proximity half-life (days)
+    importanceWeight        : 0.4,   // Importance weight in time-semantic composite ranking
+    recencyWeight           : 0.3,   // Temporal proximity weight (exponential decay from anchorTime)
+    semanticWeight          : 0.3,   // Semantic similarity weight
+    activationThreshold     : 0,     // Always apply composite ranking
+    recencyHalfLifeDays     : 30,    // Temporal proximity half-life (days)
+    // MemoryRecaller final sort lexical correction — additive term only, not a hard override.
+    // lexWeight is determined per-fragment by rerankerScore presence.
+    lexicalWeightReranked   : 0.12,  // Lexical fine-tuning for fragments that have a rerankerScore
+    lexicalWeightFallback   : 0.18,  // Lexical boost for fragments without rerankerScore (intentionally below semanticWeight 0.30)
+    lexicalLinkedMultiplier : 0.5,   // Lexical weight decay for includeLinks fragments
+    lexicalSaturation       : 8,     // log normalization denominator for lexicalMatchScore
+    unrerankedBaseDiscount  : 0.85,  // Base penalty applied to fragments without a rerankerScore
   },
   staleThresholds: {
     procedure: 30,   // Stale threshold for procedure fragments (days)

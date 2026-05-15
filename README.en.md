@@ -207,10 +207,18 @@ _meta structure example:
   "_meta": {
     "searchEventId": "evt-abc123",
     "hints": { "signal": "consider_context" },
-    "suggestion": { "code": "large_limit_no_budget", "message": "..." }
+    "suggestion": { "code": "large_limit_no_budget", "message": "..." },
+    "serverTime": {
+      "iso"        : "2026-05-15T06:32:11.000Z",
+      "epoch_ms"   : 1747291931000,
+      "display_kst": "2026년 5월 15일 (목) 15:32",
+      "timezone"   : "Asia/Seoul"
+    }
   }
 }
 ```
+
+`serverTime`: Server time of the response, mitigating LLM clients' training-time fixation. Included consistently in all recall/context responses. Four fields: `iso` (UTC ISO 8601), `epoch_ms` (Unix ms), `display_kst` (Asia/Seoul formatted), `timezone`.
 
 Deprecation notice: v3.0.0 mirrors the top-level `_searchEventId` / `_memento_hint` / `_suggestion` fields to `_meta.*`. The top-level fields will be removed in v3.1.0. Migrate to `_meta.searchEventId` / `_meta.hints` / `_meta.suggestion`.
 
