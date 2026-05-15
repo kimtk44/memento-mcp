@@ -357,12 +357,23 @@ API 키의 일일 호출 제한을 변경한다. 마스터 키 인증 필요.
 
 `_meta`: recall/context 응답 최상위의 메타데이터 래퍼.
 
+- `searchEventId`: 검색 이벤트 식별자. 후속 `tool_feedback` 호출 시 FK로 사용.
+- `hints`: 검색 결과 신호 배열(`no_results`, `stale_results`, `active_errors` 등).
+- `suggestion`: 사용 패턴 기반 도구 제안.
+- `serverTime`: 응답 생성 시점의 서버 시각. LLM 클라이언트의 학습 시점 시간 고착을 방지하기 위해 모든 recall/context 응답에 일관되게 포함된다. `iso`(UTC ISO 8601), `epoch_ms`(Unix ms), `display_kst`(Asia/Seoul 한국어 표기), `timezone` 4필드 구성.
+
 ```json
 {
   "_meta": {
     "searchEventId": 1234,
     "hints": ["contextText 파라미터 추가로 SpreadingActivation 활성화 권장"],
-    "suggestion": { "code": "empty_result_no_context", "recommendedTool": "recall" }
+    "suggestion": { "code": "empty_result_no_context", "recommendedTool": "recall" },
+    "serverTime": {
+      "iso"        : "2026-05-15T06:32:11.000Z",
+      "epoch_ms"   : 1747291931000,
+      "display_kst": "2026년 5월 15일 (목) 15:32",
+      "timezone"   : "Asia/Seoul"
+    }
   }
 }
 ```

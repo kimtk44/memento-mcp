@@ -1,6 +1,6 @@
 {
   "name": "memento-mcp",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "license": "Apache-2.0",
   "description": "Fragment-Based Memory MCP Server",
   "main": "server.js",

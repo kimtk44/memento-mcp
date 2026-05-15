@@ -189,7 +189,7 @@ memento-mcp remember "내용" --topic 프로젝트명 --idempotency-key k1
 
 ## API 응답 메타
 
-`recall` / `context` 응답은 `_meta: { searchEventId, hints, suggestion }` 필드를 포함한다.
+`recall` / `context` 응답은 `_meta: { searchEventId, hints, suggestion, serverTime }` 필드를 포함한다. `serverTime`은 LLM 클라이언트의 학습 시점 시간 고착을 방지하기 위해 매 응답마다 서버 현재 시각을 노출한다.
 
 ```json
 {
@@ -197,7 +197,13 @@ memento-mcp remember "내용" --topic 프로젝트명 --idempotency-key k1
   "_meta": {
     "searchEventId": "evt-abc123",
     "hints": { "signal": "consider_context" },
-    "suggestion": { "code": "large_limit_no_budget", "message": "..." }
+    "suggestion": { "code": "large_limit_no_budget", "message": "..." },
+    "serverTime": {
+      "iso"        : "2026-05-15T06:32:11.000Z",
+      "epoch_ms"   : 1747291931000,
+      "display_kst": "2026년 5월 15일 (목) 15:32",
+      "timezone"   : "Asia/Seoul"
+    }
   }
 }
 ```

@@ -2,7 +2,15 @@
 
 AI 에이전트가 Memento MCP 기억 서버를 최대 효율로 활용하기 위한 기술 레퍼런스.
 
-## 현재 버전: v4.0.1
+## 현재 버전: v4.1.0
+
+v4.1.0은 recall 최종 정렬과 시간 인지 보강 릴리즈다. `MemoryRecaller.recall`의 통합 정렬이 `computeRecallScore` 단일 함수로 교체되어 cross-encoder reranker 결과가 base로 보존되고, topic/keyword 직접 일치 신호가 log 정규화된 제한 가산항(reranked 0.12 / fallback 0.18, 연결 파편은 절반 감쇠)으로 반영된다. hard override(`1000 + lexical`) 패치는 reranker 폐기·이중 계산·페이지네이션 불안정 5개 결함으로 다중 LLM 토론 후 기각됐다. recall/context 응답 `_meta`에 `serverTime { iso, epoch_ms, display_kst, timezone }` 필드가 신규 노출되어 LLM 클라이언트가 매 응답마다 서버 현재 시각을 재확인할 수 있다.
+
+### `_meta.serverTime` 활용 의무
+
+학습 시점에 시간 인식이 머무는 LLM 특성으로 인해 "오늘 며칠인지" "이 메모리가 얼마 전 것인지" 판단 오류가 발생한다. recall/context 응답을 받은 즉시 `_meta.serverTime.display_kst`(한국어 친화) 또는 `_meta.serverTime.iso`(정확한 기계 파싱)로 현재 시점을 재확인하고, 파편의 `created_at`·`age_days`와 대조하여 stale 여부를 판단하라. 응답 메타에 명시된 서버 시각이 자체 추정 시각과 다르면 서버 시각이 정답이다.
+
+## v4.0.1
 
 v4.0.1은 recall 정확도 보정 patch 릴리즈다. Cross-encoder Reranker query에 `topic`·`keywords`·`text` prefix가 결합되어 정확 매칭 신호가 재정렬 단계까지 보존된다. `_searchL1` fallback의 L1 결과가 RRF에서 가중 강등(0.5)되고, fallback fragment가 `_searchL2.getByIds`로 누수되는 경로가 차단된다. `semanticSearch.minSimilarity` 기본값이 0.5로 상향됐고, 옵트인 ENV `MEMENTO_RECALL_MIN_SIM_FLOOR`로 적응형 임계값 하한을 강제할 수 있다. `EmbeddingCache` 캐시 키에 `EMBEDDING_MODEL` prefix가 결합되어 모델 변경 시 stale 벡터 hit이 차단된다. `boostAssistantFragments`의 기본 boost가 0.05 → 0.02로 축소됐다.
 

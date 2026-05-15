@@ -243,11 +243,18 @@ DATABASE_URL=$DATABASE_URL node scripts/backfill-embeddings.js
 ```js
 export const MEMORY_CONFIG = {
   ranking: {
-    importanceWeight    : 0.4,   // 시간-의미 복합 랭킹에서 중요도 가중치
-    recencyWeight       : 0.3,   // 시간 근접도 가중치 (anchorTime 기준 지수 감쇠)
-    semanticWeight      : 0.3,   // 시맨틱 유사도 가중치
-    activationThreshold : 0,     // 항상 복합 랭킹 적용
-    recencyHalfLifeDays : 30,    // 시간 근접도 반감기 (일)
+    importanceWeight        : 0.4,   // 시간-의미 복합 랭킹에서 중요도 가중치
+    recencyWeight           : 0.3,   // 시간 근접도 가중치 (anchorTime 기준 지수 감쇠)
+    semanticWeight          : 0.3,   // 시맨틱 유사도 가중치
+    activationThreshold     : 0,     // 항상 복합 랭킹 적용
+    recencyHalfLifeDays     : 30,    // 시간 근접도 반감기 (일)
+    // MemoryRecaller 최종 정렬용 lexical 보정 — hard override 아님, 제한된 가산항.
+    // lexWeight는 파편별 rerankerScore 유무로 결정한다.
+    lexicalWeightReranked   : 0.12,  // rerankerScore 보유 파편의 lexical 미세 보정
+    lexicalWeightFallback   : 0.18,  // rerankerScore 미보유 파편의 lexical 보강 (semanticWeight 0.30보다 명확히 낮게)
+    lexicalLinkedMultiplier : 0.5,   // includeLinks 파편의 lexical 가중치 감쇠
+    lexicalSaturation       : 8,     // lexicalMatchScore log 정규화 분모
+    unrerankedBaseDiscount  : 0.85,  // rerankerScore 미보유 파편 base에 적용하는 페널티
   },
   staleThresholds: {
     procedure: 30,   // 절차 파편의 stale 기준 (일)

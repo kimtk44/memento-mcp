@@ -1,5 +1,26 @@
 # Changelog
 
+## [4.1.0] - 2026-05-15
+
+recall 최종 정렬에서 cross-encoder reranker 결과를 보존하고, topic/keyword 직접 일치 신호를 제한된 가산항으로 반영한다. recall/context 응답 `_meta`에 서버 현재 시각을 일관되게 노출하여 LLM 클라이언트의 학습 시점 시간 고착을 방지한다. 기존 API·DB 스키마 호환, 응답 추가 필드(`_meta.serverTime`)만 신규 노출.
+
+### Added
+
+- `lib/memory/processors/MemoryRecaller.js` `computeRecallScore` export. recall 최종 정렬용 단일 점수 함수. `rerankerScore` 보유 시 그것을 base로 사용, 미보유 시 `(importance × 0.4 + proximity × 0.3 + similarity × 0.3) × unrerankedBaseDiscount(0.85)`. lexical 일치는 log 스케일 정규화 후 파편별 제한 가중치로 가산.
+- `lib/memory/read/FragmentSearch.js` `deriveImplicitKeywords`, `lexicalMatchScore` export. text-only 짧은 질의의 보조 키워드 추출(최소 3자, 한국어/영어 stopword 확장)과 topic/keyword 직접 일치 점수 계산.
+- `lib/tools/serverTime.js` (신규) `serverTimeMeta()`. `iso`(UTC ISO 8601), `epoch_ms`, `display_kst`(Asia/Seoul 한국어), `timezone` 4필드 반환.
+- `config/memory.js` `ranking` 블록 신규 키 5종: `lexicalWeightReranked` 0.12, `lexicalWeightFallback` 0.18, `lexicalLinkedMultiplier` 0.5, `lexicalSaturation` 8, `unrerankedBaseDiscount` 0.85.
+- 신규 unit 테스트: `tests/unit/lexical-match-score.test.js`(8), `tests/unit/recall-final-ranking.test.js`(8), `tests/unit/recall-ranking-integration.test.js`(4), `tests/unit/server-time-meta.test.js`(4).
+
+### Changed
+
+- `lib/memory/processors/MemoryRecaller.js` `recall`: includeLinks 병합 직후 수행하던 `importance/recency/similarity` 단일 재정렬을 `computeRecallScore` 기반 통합 정렬로 교체. 이전 코드는 `rerankerScore`를 참조하지 않아 cross-encoder 비용을 폐기하고 topic/keyword 직접 일치 신호도 누락했다. 새 정렬은 파편별 `rerankerScore` 유무로 `lexWeight`를 분기하며, includeLinks 파편을 `_source="linked"`로 태깅해 lexical 가중치를 절반으로 감쇠한 뒤 응답에서 제거한다.
+- `lib/tools/memory.js` recall(caseMode+일반 두 분기) 및 context 응답의 `_meta` 객체에 `serverTime: serverTimeMeta()` 주입. 기존 필드(`searchEventId`, `hints`, `suggestion`) 구조 무변경.
+
+### Design notes
+
+검토 단계에서 lexical 일치를 `if (lexical > 0) return 1000 + lexical` 형태의 hard override로 부여하는 패치가 제안됐으나, 다중 LLM 토론(Oracle Pro / Claude / Gemini)을 거쳐 다음 5개 결함으로 기각했다: (a) reranker 결과 폐기 (b) reranker와 lexical의 이중 계산 (c) 직접/연결 파편 미구분 (d) `threshold` 필터 우회 (e) cursor 페이지네이션 불안정. 채택된 가산항 방식은 rerankerScore 격차를 lexical 보정이 무조건 뒤집지 않도록 lexWeight 상한을 0.12(reranked) / 0.18(fallback)로 제한하며, 정렬은 결정적이라 페이지 경계가 안정적이다.
+
 ## [4.0.1] - 2026-05-14
 
 기존 API·DB 스키마 호환. 외부 호출자 응답 구조 무변경.
