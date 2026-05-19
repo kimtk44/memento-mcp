@@ -43,7 +43,7 @@ desktop.ini
 # IDE
 .vscode/
 .idea/
-.claude/settings.local.json
+.claude/
 *.swp
 *.swo
 *~
