@@ -12,9 +12,18 @@
 import { describe, it, mock, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 
-import { ReflectProcessor } from "../../lib/memory/ReflectProcessor.js";
-import { redisClient }      from "../../lib/redis.js";
-import { assertCleanShutdown } from "../_lifecycle.js";
+mock.module("../../lib/memory/MorphemeIndex.js", {
+  namedExports: {
+    MorphemeIndex: class {
+      async tokenize()               { return []; }
+      async getOrRegisterEmbeddings() { return []; }
+    },
+  },
+});
+
+const { ReflectProcessor }  = await import("../../lib/memory/ReflectProcessor.js");
+const { redisClient }        = await import("../../lib/redis.js");
+const { assertCleanShutdown } = await import("../_lifecycle.js");
 
 /**
  * ReflectProcessor import 체인이 Redis ioredis 클라이언트를 즉시 연결하므로
@@ -25,6 +34,9 @@ import { assertCleanShutdown } from "../_lifecycle.js";
  * timer가 비활성화되므로 assertCleanShutdown이 active handle 0을 검증할 수 있다.
  */
 after(async () => {
+  /** mock stub이라 즉시 settle되지만 _morphemePromises finally 콜백은
+   *  microtask queue에 적재되므로 setImmediate로 한 tick 비워 drain한다. */
+  await new Promise(r => setImmediate(r));
   try { await redisClient.quit(); } catch (_) {}
   try {
     const { getPrimaryPool } = await import("../../lib/tools/db.js");

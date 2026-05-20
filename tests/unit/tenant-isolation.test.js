@@ -146,9 +146,9 @@ describe("Tenant Isolation — SessionLinker.wouldCreateCycle keyId 격리", () 
     const linker = new SessionLinker(store, null);
 
     const fragments = [
-      { id: "e1", type: "error" },
-      { id: "d1", type: "decision" },
-      { id: "p1", type: "procedure" }
+      { id: "e1", type: "error",     caseId: "same-case", keywords: ["auth", "token", "session"] },
+      { id: "d1", type: "decision",  caseId: "same-case", keywords: ["auth", "token", "session"] },
+      { id: "p1", type: "procedure", caseId: "same-case", keywords: ["auth", "token", "session"] }
     ];
 
     await linker.autoLinkSessionFragments(fragments, "default", "tenant-A");
@@ -165,8 +165,8 @@ describe("Tenant Isolation — SessionLinker.wouldCreateCycle keyId 격리", () 
     const linker = new SessionLinker(store, null);
 
     const fragments = [
-      { id: "e1", type: "error" },
-      { id: "d1", type: "decision" }
+      { id: "e1", type: "error",    caseId: "same-case", keywords: ["auth", "token", "session"] },
+      { id: "d1", type: "decision", caseId: "same-case", keywords: ["auth", "token", "session"] }
     ];
 
     await linker.autoLinkSessionFragments(fragments, "default");
