@@ -16,6 +16,7 @@
 - `MorphemeIndex._tokenize()` 내부가 `MEMENTO_MORPHEME_TOKENIZER=local`(기본)일 때 `MorphemeTokenizer.tokenize()`로 위임. `llm` 경로는 기존 `_tokenizeViaLLM()` 그대로 유지.
 - OpenAI 임베딩 경로(`getOrRegisterEmbeddings`) 및 `morpheme_dict` DB 스키마 변경 없음.
 - Docker 베이스 이미지를 `node:20-alpine`에서 `node:24-alpine`으로 상향. garu-ko(WASM)가 요구하는 WASM stringref를 컨테이너 런타임에서 지원하기 위함.
+- reflect의 narrative episode 저장 경로에서 충돌 감지(`detectConflicts`)를 생략하는 `skipConflictDetection` 옵션 도입. episode 저장 지연을 약 1,100ms에서 약 150ms로 단축한다. 일반 `remember`는 기본값으로 충돌 감지를 유지하며, 정합성 자동 링크(related·temporal·preceded_by)는 그대로 수행된다.
 
 ### Removed
 - jest, @jest/globals, babel-jest devDependencies
