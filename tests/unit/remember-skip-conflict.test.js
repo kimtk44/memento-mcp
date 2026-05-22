@@ -24,6 +24,19 @@ function makeRememberer(calls) {
   });
 }
 
+describe("_finalizeRemember skipConflictDetection (atomic 경로 공유)", () => {
+  test("params.skipConflictDetection=true이면 detectConflicts 미호출", async () => {
+    const calls = { detect: 0, autoLink: 0 };
+    const r = makeRememberer(calls);
+    const res = await r._finalizeRemember(
+      { id: "frag-x", content: "c", topic: "session_reflect", keywords: [], importance: 0.6 },
+      { agentId: "default", keyId: null, groupKeyIds: null, params: { skipConflictDetection: true } }
+    );
+    assert.equal(calls.detect, 0);
+    assert.deepEqual(res.conflicts, []);
+  });
+});
+
 describe("remember skipConflictDetection (비원자 경로)", () => {
   test("skipConflictDetection=true이면 detectConflicts 미호출, conflicts=[]", async () => {
     const calls = { detect: 0, autoLink: 0 };
