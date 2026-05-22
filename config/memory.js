@@ -214,6 +214,7 @@ export const MEMORY_CONFIG = {
     minSimilarity     : 0.15,     // fallback 최소 유사도 (L3보다 낮게 설정)
     maxMorphemes      : 10,       // 쿼리에서 추출할 최대 형태소 수
     geminiTimeoutMs   : 60_000,   // 형태소 분리 LLM 타임아웃 (Gemini/Codex/Copilot CLI 공통)
-    registerOnRemember: true      // remember() 시 형태소 자동 등록 여부
+    registerOnRemember: true,     // remember() 시 형태소 자동 등록 여부
+    tokenizer         : process.env.MEMENTO_MORPHEME_TOKENIZER || "local"  // "local" | "llm"
   }
 };
