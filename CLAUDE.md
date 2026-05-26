@@ -59,9 +59,23 @@ followup #10/#4 (출처 vault `00 Inbox/2026-05-26_memento-retrieval-followups.m
 
 > 동시 운영: `5c88d24` (LLM Server Agent <agent@llm-server.local>, 11:25:38) = 위 reranker § docs 기록 커밋. 본 repo는 동시 자동화 에이전트가 docs 커밋을 추가할 수 있음 — 본 § 중복 docs 커밋 발견 시 머지.
 
+## 2026-05-26 local-only amend re-embed enqueue patch (#5 fix)
+
+followup #5 검증 결과 fix. amend가 content를 바꾸면 `embedding=NULL`이 되는데, remember와 달리 임베딩 큐에 enqueue하지 않아 재임베딩이 orphan 스캔(scheduler 30분 / consolidator 1시간)에만 의존 → amend 직후 ~최대 30분 L3 semantic recall 누락.
+
+**적용 patch (commit `fc67fde`, local main, NOT pushed)**:
+
+- `lib/memory/MemoryManager.js` — import `pushToQueue` + `amend`에서 `updates.content !== undefined`일 때 `pushToQueue(MEMORY_CONFIG.embeddingWorker.queueKey, {fragmentId})` 추가 (re-index 직후). remember와 동일 경로 → ~1–5초 재임베딩. Redis 다운 시 false 반환 → 기존 orphan 스캔 폴백.
+
+**왜 stale 아님**: amend는 항상 새 content로 재임베딩(`processOrphanFragments`/큐 워커 `_embedOne`이 `SELECT content` = 현재 content). 문제는 데이터 stale이 아니라 **재인덱스 latency**였음. 라이브 검증: amend 후 B(새)쿼리 sim 0.66 rank 1 / A(옛)쿼리 absent = fresh.
+
+**amend 인접 코드 주의 (NEVER guard #3 정합)**: 본 patch는 `MemoryManager.amend` handler에 enqueue만 **추가** — d7e5a31 workspace 처리부 무변경. 검증: workspace=sandbox amend 정상 적용 확인.
+
+**Verify (2026-05-26)**: jest unit 125 pass. restart 후 amend→재임베딩 ~1초(fix 전 40초+ NULL). throwaway 파편 정리 완료.
+
 ## 다른 세션 위험 — NEVER 위반
 
-- **NEVER `git pull --rebase`** or **`git reset --hard origin/main`** — local commit stack `d7e5a31` → `07b9081` → `90b1270` → `4fcb43b` → `602ba7e` → `9236587` 잃음 (push 차단됨, local만 존재)
+- **NEVER `git pull --rebase`** or **`git reset --hard origin/main`** — local commit stack `d7e5a31` → `07b9081` → `90b1270` → `4fcb43b` → `602ba7e` → `9236587` → `fc67fde` 잃음 (push 차단됨, local만 존재)
 - **NEVER re-patch** — 이미 박혀 있음. `amend workspace` bug 다시 발견하면 본 doc § 2026-05-19 read 의무
 - **다른 amend 관련 코드 수정 시 본 patch 인지 필수** — `MemoryManager.amend` (handler), `FragmentWriter.update` (store SQL), `memory-schemas.amendDefinition` (tool schema) 모두 patched
 - 본 patch 변경 시 `sudo systemctl restart memento-mcp` 후 amend test 의무 (search_traces(workspace=...) verify)
