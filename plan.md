@@ -29,6 +29,17 @@
 - restart 후 verify: 옛 probe 5개 `recall(text, rankingMode:"semantic")` → 정답 top-5 기대 (현재 absent/rank-14). 최신 probe 회귀 없음. 기본 recall() diff 0.
 - 미커밋 (사용자 결정). 커밋 시 메시지 영어 + amend patch(d7e5a31) 인지.
 
+## #1+#2 구현+라이브 검증 완료 (2026-05-26)
+
+문제: L4 리랭커 `Xenova/ms-marco-MiniLM-L-6-v2`(영어)가 한국어 ~uniform(1.08) → 변별 0 + 30→15 컷이 high-sim 옛 파편 누락. balanced 최종 sort는 rerankerScore도 폐기(recency 복합으로 덮음).
+
+- **#1 GPU 리랭커 서버**: `bge-reranker-v2-m3-Q8_0.gguf` (gpustack) → `llama-server --reranking --pooling rank :8083` MERC. systemd `bge-reranker.service`(enable, reboot 생존). 변별 강함(relevant logit -1.1 vs irrelevant -11), warm ~30ms.
+- 어댑터: `Reranker.js` rerankExternal — llama.cpp `{results:[{index,relevance_score(logit)}]}` → index 정렬 + sigmoid([0,1]). `.env` RERANKER_URL=http://localhost:8083 (external mode; in-process bge-m3 = 3연속 실패 fallback). RERANKER_TIMEOUT_MS=8000.
+- **#2 balanced rerankerScore 존중**: `MemoryManager.js` 최종 sort — rerankerScore 있으면 `1000+score`(리랭크 파편이 비-리랭크 위 + relevance 순), 없으면 기존 recency 복합. semantic 분기 불변.
+- **라이브 검증(restart 후, External mode 확인)**: default(balanced) recall에서 40일전 CTS gold rank 1 / Bambu gold rank 1 (이전 ABSENT). searchPath Rerank:15. balanced recall latency ~423ms. unit 23/23 pass. semantic 모드 불변.
+- 배포 상태: `.env`(gitignored, RERANKER_URL 로컬) + `/etc/systemd/system/bge-reranker.service`(repo 밖). 코드(Reranker.js/MemoryManager.js)는 commit.
+- 남은 #2 후속(옵션): semantic 모드도 이제 빠른 GPU 리랭커 사용 검토 가능(현재 bypass=raw cosine, 작동 중이라 유지). #9: CLAUDE.md NEVER 스택에 rankingMode(4fcb43b)+본 reranker commit 추가 필요.
+
 ---
 (이하 원안)
 
