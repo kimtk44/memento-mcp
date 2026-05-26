@@ -14,9 +14,23 @@
 
 **Verify (2026-05-19)**: server schema curl tools/list 결과 `workspace` property present. amend({id, workspace: "..."}) 호출 success + DB UPDATE 적용 (search_traces(workspace="memento-mcp") 결과 갱신 fragment 포함 확인, frag-5b763c7c1daa1468).
 
+## 2026-05-26 local-only recall trim patch
+
+`recall` text/semantic 경로가 0건 회귀하던 버그 fix.
+
+**적용 patch (commit `90b1270`, local main, NOT pushed)**:
+
+- `lib/memory/FragmentSearch.js` — `_trimToTokenBudget()`가 최상위 파편 토큰비용 > `tokenBudget`일 때 `break`로 결과 전체를 폐기(빈 배열 반환) → recall 0건. result가 비면 `fragments[0]` 1건을 넣어 **최소 1건 보장** (주석 포함 ~5줄).
+
+**원인**: 한국어 text recall에서 cross-encoder(영어 MiniLM)가 후보를 재정렬해 큰 파편이 rank #1에 오고, 호출 측이 작은 `tokenBudget`을 쓰면 head 단독 starvation으로 전체 0건. (DB `search_events` event 1357 = result_count 0, l3_count 30 실측.)
+
+**Verify (2026-05-26)**: restart 후 `recall(text=…, tokenBudget=100)` 0건→1건 / 기본 budget 15건 gold(frag-b643da10) #1 무회귀 (search_events 1386/1387).
+
+> 참고: `07b9081` (embedding fail-fast OpenAI client) 도 동일하게 local-only 미push commit. 본 commit stack(`d7e5a31` → `07b9081` → `90b1270`) 전체가 아래 NEVER 가드 보호 대상.
+
 ## 다른 세션 위험 — NEVER 위반
 
-- **NEVER `git pull --rebase`** or **`git reset --hard origin/main`** — local commit `d7e5a31` 잃음 (push 차단됨, local만 존재)
+- **NEVER `git pull --rebase`** or **`git reset --hard origin/main`** — local commit stack `d7e5a31` → `07b9081` → `90b1270` 잃음 (push 차단됨, local만 존재)
 - **NEVER re-patch** — 이미 박혀 있음. `amend workspace` bug 다시 발견하면 본 doc § 2026-05-19 read 의무
 - **다른 amend 관련 코드 수정 시 본 patch 인지 필수** — `MemoryManager.amend` (handler), `FragmentWriter.update` (store SQL), `memory-schemas.amendDefinition` (tool schema) 모두 patched
 - 본 patch 변경 시 `sudo systemctl restart memento-mcp` 후 amend test 의무 (search_traces(workspace=...) verify)
