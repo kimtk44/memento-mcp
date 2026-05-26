@@ -28,9 +28,26 @@
 
 > 참고: `07b9081` (embedding fail-fast OpenAI client) 도 동일하게 local-only 미push commit. 본 commit stack(`d7e5a31` → `07b9081` → `90b1270`) 전체가 아래 NEVER 가드 보호 대상.
 
+## 2026-05-26 local-only reranker GPU external patch
+
+한국어 재정렬 품질 + 지연 동시 해결 위해 reranker를 영어 MiniLM(in-process) → bge-reranker-v2-m3(GPU external)로 전환.
+
+**적용 patch (commit `602ba7e`, local main, NOT pushed)**:
+
+- `lib/memory/Reranker.js` — `rerankExternal()`가 llama.cpp `--reranking` / Jina 응답 포맷 `{results:[{index, relevance_score}]}`(raw logit)을 파싱: `index`로 원본 document 순서 재매핑 + `sigmoid`로 [0,1] 정규화(in-process 경로와 스케일 일치). `data.scores` 폴백 유지.
+- (관련) `4fcb43b` — opt-in `rankingMode`(recency-off, 오래된 파편 recall용) 도 같은 트랙 local-only commit.
+
+**왜 필수**: 미패치 시 `rerankExternal`이 `data.scores`(undefined)만 읽어 `null` 반환 → external 3연속 실패 → 느린 in-process ONNX(CPU)로 **silent fallback**. 즉 GPU 서버를 띄워도 코드 패치 없으면 external이 절대 안 쓰임.
+
+**.env (gitignore, machine-config — 비휴대)**: `RERANKER_URL=http://localhost:8083`(llama.cpp `--reranking` bge-reranker-v2-m3, MERC GPU), `RERANKER_MODEL=bge-m3`(external 실패 시 in-process ONNX fallback 모델), `RERANKER_TIMEOUT_MS=8000`.
+
+**운영 의존**: `:8083` reranker 서버가 떠 있어야 external 사용. 다운 시 in-process bge-m3 ONNX(CPU q4 ~2.5–8s)로 fallback — 동작하나 느림.
+
+**Verify (2026-05-26)**: restart 후 로그 `[Reranker] External mode: http://localhost:8083`(in-process 로드 없음). recall latency **424–755ms** (in-process bge-m3 ~8000ms / 영어 MiniLM ~961ms 대비), gold(frag-b643da10) #1 품질 유지 (search_events 1455/1456).
+
 ## 다른 세션 위험 — NEVER 위반
 
-- **NEVER `git pull --rebase`** or **`git reset --hard origin/main`** — local commit stack `d7e5a31` → `07b9081` → `90b1270` 잃음 (push 차단됨, local만 존재)
+- **NEVER `git pull --rebase`** or **`git reset --hard origin/main`** — local commit stack `d7e5a31` → `07b9081` → `90b1270` → `4fcb43b` → `602ba7e` 잃음 (push 차단됨, local만 존재)
 - **NEVER re-patch** — 이미 박혀 있음. `amend workspace` bug 다시 발견하면 본 doc § 2026-05-19 read 의무
 - **다른 amend 관련 코드 수정 시 본 patch 인지 필수** — `MemoryManager.amend` (handler), `FragmentWriter.update` (store SQL), `memory-schemas.amendDefinition` (tool schema) 모두 patched
 - 본 patch 변경 시 `sudo systemctl restart memento-mcp` 후 amend test 의무 (search_traces(workspace=...) verify)
