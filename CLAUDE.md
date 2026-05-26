@@ -45,9 +45,23 @@
 
 **Verify (2026-05-26)**: restart 후 로그 `[Reranker] External mode: http://localhost:8083`(in-process 로드 없음). recall latency **424–755ms** (in-process bge-m3 ~8000ms / 영어 MiniLM ~961ms 대비), gold(frag-b643da10) #1 품질 유지 (search_events 1455/1456).
 
+## 2026-05-26 local-only search_events query_text + SKILL.md rankingMode patch
+
+followup #10/#4 (출처 vault `00 Inbox/2026-05-26_memento-retrieval-followups.md`).
+
+**적용 patch (commit `9236587`, local main, NOT pushed)**:
+
+- `lib/memory/migration-032-search-events-query-text.sql` (신규) — `search_events.query_text TEXT` 추가 (additive, IF NOT EXISTS, 무손실). **운영 DB(127.0.0.1:5432/memento)에 이미 적용됨** — `git pull --rebase`로 코드만 되돌려도 DB 컬럼은 잔류(IF NOT EXISTS라 재적용 안전).
+- `lib/memory/SearchEventRecorder.js` — `serializeQueryText()` 헬퍼 + `buildSearchEvent` query_text 필드 + `recordSearchEvent` INSERT `$17`. (#10: query_type/filter_keys만으로 "무엇을 검색했는지" 복원 불가 → text/keywords/topic 원본 JSON 보존.)
+- `SKILL.md` — #4 rankingMode 발견성: 검색 의사결정 트리 + 세션 생명주기 recall 표에 `rankingMode="semantic"` 안내 (get_skill_guide 노출). doc-only.
+
+**Verify (2026-05-26)**: jest unit 125 pass. restart 후 라이브 recall search_event 1463 query_text 정상 기록 (`{"text":…,"keywords":[…],"topic":"memento-mcp"}`). get_skill_guide(section=search) rankingMode 팁 서빙 확인.
+
+> 동시 운영: `5c88d24` (LLM Server Agent <agent@llm-server.local>, 11:25:38) = 위 reranker § docs 기록 커밋. 본 repo는 동시 자동화 에이전트가 docs 커밋을 추가할 수 있음 — 본 § 중복 docs 커밋 발견 시 머지.
+
 ## 다른 세션 위험 — NEVER 위반
 
-- **NEVER `git pull --rebase`** or **`git reset --hard origin/main`** — local commit stack `d7e5a31` → `07b9081` → `90b1270` → `4fcb43b` → `602ba7e` 잃음 (push 차단됨, local만 존재)
+- **NEVER `git pull --rebase`** or **`git reset --hard origin/main`** — local commit stack `d7e5a31` → `07b9081` → `90b1270` → `4fcb43b` → `602ba7e` → `9236587` 잃음 (push 차단됨, local만 존재)
 - **NEVER re-patch** — 이미 박혀 있음. `amend workspace` bug 다시 발견하면 본 doc § 2026-05-19 read 의무
 - **다른 amend 관련 코드 수정 시 본 patch 인지 필수** — `MemoryManager.amend` (handler), `FragmentWriter.update` (store SQL), `memory-schemas.amendDefinition` (tool schema) 모두 patched
 - 본 patch 변경 시 `sudo systemctl restart memento-mcp` 후 amend test 의무 (search_traces(workspace=...) verify)
