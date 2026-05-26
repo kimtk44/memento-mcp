@@ -11,6 +11,7 @@
 import {
   classifyQueryType,
   extractFilterKeys,
+  serializeQueryText,
   buildSearchEvent
 } from "../lib/memory/SearchEventRecorder.js";
 
@@ -122,6 +123,46 @@ describe("extractFilterKeys", () => {
 });
 
 // ---------------------------------------------------------------------------
+// serializeQueryText
+// ---------------------------------------------------------------------------
+
+describe("serializeQueryText", () => {
+  it("null/undefined 입력은 null을 반환한다", () => {
+    expect(serializeQueryText(null)).toBeNull();
+    expect(serializeQueryText(undefined)).toBeNull();
+  });
+
+  it("빈 객체는 null을 반환한다", () => {
+    expect(serializeQueryText({})).toBeNull();
+  });
+
+  it("text만 있으면 text 키만 직렬화한다", () => {
+    expect(JSON.parse(serializeQueryText({ text: "hello" }))).toEqual({ text: "hello" });
+  });
+
+  it("keywords만 있으면 keywords 키만 직렬화한다", () => {
+    expect(JSON.parse(serializeQueryText({ keywords: ["a", "b"] }))).toEqual({ keywords: ["a", "b"] });
+  });
+
+  it("topic만 있으면 topic 키만 직렬화한다", () => {
+    expect(JSON.parse(serializeQueryText({ topic: "arch" }))).toEqual({ topic: "arch" });
+  });
+
+  it("세 필드 모두 직렬화한다", () => {
+    expect(JSON.parse(serializeQueryText({ text: "t", keywords: ["k"], topic: "tp" })))
+      .toEqual({ text: "t", keywords: ["k"], topic: "tp" });
+  });
+
+  it("빈 문자열·빈 배열은 없는 것으로 처리한다", () => {
+    expect(serializeQueryText({ text: "", keywords: [] })).toBeNull();
+  });
+
+  it("필터 전용 필드(type/isAnchor)는 직렬화하지 않는다", () => {
+    expect(serializeQueryText({ type: "fact", isAnchor: true })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildSearchEvent
 // ---------------------------------------------------------------------------
 
@@ -199,6 +240,19 @@ describe("buildSearchEvent", () => {
     expect(event.query_type).toBe("mixed");
     expect(event.filter_keys).toContain("topic");
     expect(event.filter_keys).toContain("is_anchor");
+  });
+
+  it("query_text가 순수 함수 결과와 일치한다", () => {
+    const query = { text: "hello", keywords: ["a", "b"], topic: "arch" };
+    const event = buildSearchEvent(query, [], {});
+    expect(event.query_text).toBe(serializeQueryText(query));
+    expect(JSON.parse(event.query_text)).toEqual({
+      text: "hello", keywords: ["a", "b"], topic: "arch"
+    });
+  });
+
+  it("검색어가 없으면 query_text가 null이다", () => {
+    expect(buildSearchEvent({}, []).query_text).toBeNull();
   });
 
   it("L1 전용 폴백 경로도 올바르게 파싱된다", () => {

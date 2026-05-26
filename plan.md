@@ -94,3 +94,32 @@ score = importance*0.4 + proximity*0.3 + similarity*0.3   (proximity = 2^(-ageDa
 ## 결정 게이트
 
 **구현 전 사용자 승인 필요**: (a) 옵션 1만(opt-in, 안전) / (b) 옵션1+2(default 도 rerank 존중) / (c) 옵션 3 튜닝 / 범위 확정 후 implement.
+
+---
+
+# 2026-05-26 (2nd) — followup #10 (search_events query_text) + #4 (rankingMode 발견성)
+
+출처: `00 Inbox/2026-05-26_memento-retrieval-followups.md` §C/§D. 사용자 승인: #10 JSON 직렬화 / #4 SKILL.md doc-only / 운영 DB 마이그레이션+재시작 OK.
+
+## #10 — search_events.query_text 컬럼
+
+목적: 디버깅 시 "무엇을 검색했는지"(text/keywords/topic 원본) DB 복원 불가 → 추가.
+
+- **신규** `lib/memory/migration-032-search-events-query-text.sql`: `ALTER TABLE … ADD COLUMN IF NOT EXISTS query_text TEXT` (additive, 무손실).
+- **편집** `lib/memory/SearchEventRecorder.js`: `serializeQueryText(query)` 헬퍼(비어있지 않은 `{text,keywords,topic}`만 `JSON.stringify`, 전부 비면 null, classifyQueryType과 동일 hasX 판정) → `buildSearchEvent()` 반환 객체 `query_text` 추가 → `recordSearchEvent()` INSERT `$17`.
+- **편집** `tests/search-event-recorder.test.js`: query_text 케이스 추가.
+- 적용: `psql $DATABASE_URL -f migration-032…` → `sudo systemctl restart memento-mcp`.
+- 검증: recall 1회 → `SELECT id, query_type, query_text FROM agent_memory.search_events ORDER BY id DESC LIMIT 1` 채워짐 + jest pass.
+
+## #4 — rankingMode 발견성 (SKILL.md doc-only)
+
+목적: opt-in `rankingMode:"semantic"`를 에이전트가 인지 못함 (SKILL.md 언급 0건). 자동 선택(코드)은 #3 영역+기본동작 리스크 → 제외.
+
+- **편집** `SKILL.md` ## 검색 전략 의사결정 트리: "오래된 특정 사실/결정 정확 회상 → rankingMode:'semantic'" 분기.
+- **편집** `SKILL.md` recall 선행 호출 시점 표: 동일 행 추가.
+- 두 섹션 모두 `get_skill_guide(section='search'|'lifecycle')` 노출.
+
+## governance
+
+- 새 커밋 2개도 local-only (JinHo-von-Choi fork push 차단). 구현 후 `dev/memento-mcp/CLAUDE.md` NEVER 스택 + vault `2026-05-19_memento-amend-patch-github-action.md` §4 에 신규 해시 기록 (cross-machine 가시성, push 대체).
+- #9(rankingMode CLAUDE.md 노트)는 이미 완료 상태로 확인됨 (인박스 설명 stale).

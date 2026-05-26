@@ -89,6 +89,7 @@ context 로드 후 행동:
 | 설정/환경변수 변경 전 | `recall(keywords=["설정명", "프로젝트명"])` |
 | 동일 토픽 코드 작성 전 | `recall(topic="프로젝트명")` |
 | "이전에", "저번에" 언급 시 | `recall(text="관련 내용")` |
+| 오래된 특정 사실/결정 정확 회상 (최신에 밀릴 때) | `recall(text="…", rankingMode="semantic")` |
 | 복잡한 맥락의 작업 시작 | `recall(keywords=[...], contextText="작업 배경 요약")` |
 
 recall 후 결과 피드백 (누적 효과):
@@ -200,12 +201,15 @@ remember(content="선호하는 코딩 스타일: ...", topic="preference", type=
   - timeRange={from, to} --> 시간 범위 제한
   - includeLinks=true    --> 연결된 파편 1-hop 포함 (기본값)
   - includeContext=true   --> episode의 context_summary + 인접 파편 포함
+  - rankingMode="semantic" --> recency-off 순수 의미 정렬 (오래된 특정 사실/결정 회상용, 아래 팁 참조)
 
 맥락 사전 활성화 (ENABLE_SPREADING_ACTIVATION=true 환경에서 권장):
   - contextText="현재 대화 요약" 추가 → 검색 전 관련 파편 activation_score 선제 부스트
   - 효과: 키워드에 직접 등장하지 않지만 맥락상 관련된 파편이 상위 랭크됨
   - 예: recall(keywords=["nginx"], contextText="SSL 인증서 갱신 중 오류 발생")
 ```
+
+> **오래된 사실/결정 회상 팁 (rankingMode)**: 기본 정렬(`balanced`)은 메모리답게 최신 파편을 선호한다(importance+recency+similarity 복합). 며칠~몇 주 전의 **특정** 사실·결정을 정확히 집어내야 하는데 최신 파편에 밀려 안 나온다면 `rankingMode="semantic"`을 추가하라 — recency를 끄고 순수 의미 유사도(rerankerScore 우선)로 정렬해 오래된 정답이 매몰되지 않는다. 예: `recall(text="그때 정한 배포 포트", rankingMode="semantic")`. 기본 회상에는 불필요(기본값 balanced 유지).
 
 ## 토큰 예산 관리
 
