@@ -1,6 +1,12 @@
-import { describe, it, mock } from "node:test";
+import { describe, it, mock, after } from "node:test";
 import assert from "node:assert/strict";
 import { ReflectProcessor } from "../../lib/memory/ReflectProcessor.js";
+import { teardownTestResources, assertCleanShutdown } from "../_lifecycle.js";
+
+after(async () => {
+  await teardownTestResources();
+  await assertCleanShutdown();
+});
 
 /** _buildEpisodeContext는 ReflectProcessor의 private 메서드이므로 인스턴스를 통해 접근 */
 function createProcessor() {

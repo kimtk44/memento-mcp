@@ -7,23 +7,18 @@
 
 import { describe, it, before, after, mock } from "node:test";
 import assert from "node:assert/strict";
-import { redisClient }         from "../../lib/redis.js";
-import { assertCleanShutdown } from "../_lifecycle.js";
+import { teardownTestResources, assertCleanShutdown } from "../_lifecycle.js";
 
 /**
  * lib/cli/session.js → lib/sessions.js → lib/redis.js 경로로 ioredis 클라이언트가
- * 즉시 연결되므로, 테스트 종료 후 명시적으로 quit하지 않으면 event loop가 유지되어
+ * 즉시 연결되므로, 테스트 종료 후 lifecycle helper로 정리하지 않으면 event loop가 유지되어
  * "Promise resolution is still pending" cleanup hang 발생.
  *
  * MEMENTO_METRICS_DEFAULT=off (CP2) 적용 후 prom-client collectDefaultMetrics
  * timer가 비활성화되므로 assertCleanShutdown이 active handle 0을 검증할 수 있다.
  */
 after(async () => {
-  try { await redisClient.quit(); } catch (_) {}
-  try {
-    const { getPrimaryPool } = await import("../../lib/tools/db.js");
-    await getPrimaryPool()?.end();
-  } catch (_) {}
+  await teardownTestResources();
   await assertCleanShutdown();
 });
 

@@ -27,7 +27,7 @@ function extractMergeDuplicates(text) {
   const start = text.indexOf("async _mergeDuplicates");
   assert.ok(start >= 0, "_mergeDuplicates 메서드를 찾을 수 없다");
   const sub = text.slice(start);
-  const next = sub.search(/\n  async _[A-Za-z]/);
+  const next = sub.search(/\n {2}async _[A-Za-z]/);
   return next > 0 ? sub.slice(0, next) : sub;
 }
 

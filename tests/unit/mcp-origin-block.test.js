@@ -11,8 +11,8 @@
  *  4. Origin=evil.com + STRICT=false → 통과 (opt-in 기본값)
  *  5. OAUTH_TRUSTED_ORIGINS 커스텀 추가 동작 검증
  *
- * isOriginAllowed 로직을 순수 함수로 재현하여 검증한다.
- * 실제 환경변수 주입 없이 매개변수로 설정값을 전달한다.
+ * STRICT_ORIGIN은 config import 시점에 고정되므로 이 파일은 정책을 순수 함수로
+ * 재현하는 spec-level 테스트다. 실제 handler helper의 기본값 검증은 origin-policy.test.js에서 수행한다.
  */
 
 import { describe, it } from "node:test";

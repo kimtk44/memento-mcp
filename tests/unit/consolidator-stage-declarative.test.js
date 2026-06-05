@@ -15,12 +15,10 @@ import { readFileSync }         from "node:fs";
 import { fileURLToPath }        from "node:url";
 import path                     from "node:path";
 
-import { disconnectRedis } from "../../lib/redis.js";
-import { getPrimaryPool }  from "../../lib/tools/db.js";
+import { teardownTestResources } from "../_lifecycle.js";
 
 after(async () => {
-  await disconnectRedis().catch(() => {});
-  await getPrimaryPool()?.end?.().catch(() => {});
+  await teardownTestResources();
 });
 
 const here   = path.dirname(fileURLToPath(import.meta.url));

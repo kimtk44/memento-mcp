@@ -14,9 +14,16 @@
  *  4. localhost Origin → 항상 통과 (auth 실패로 401)
  */
 
-import { describe, it, before } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
+
+process.env.DOTENV_CONFIG_PATH ??= ".env.test";
+process.env.MEMENTO_METRICS_DEFAULT ??= "off";
+process.env.REDIS_ENABLED ??= "false";
+process.env.CACHE_ENABLED ??= "false";
+
+const { teardownTestResources } = await import("../_lifecycle.js");
 
 /** 공통 fake 응답 헬퍼 */
 function fakeRes() {
@@ -59,6 +66,10 @@ describe("handleSessionRotate: CSRF Origin 검증", () => {
     /** auth 우회 — CSRF/rate-limit 계층만 단위 검증하기 위해 인증 비활성화 */
     process.env.MEMENTO_AUTH_DISABLED = "true";
     ({ handleSessionRotate } = await import("../../lib/handlers/session-handler.js"));
+  });
+
+  after(async () => {
+    await teardownTestResources();
   });
 
   /** 화이트리스트가 비어 있을 때 (기본) 외부 Origin도 통과하는지 확인 */

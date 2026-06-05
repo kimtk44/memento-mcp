@@ -325,19 +325,22 @@ docs/
 - OAuth 엔드포인트: 인증 실패 시 `WWW-Authenticate` 헤더를 반환하여 OAuth 클라이언트가 자동으로 인증 흐름을 시작할 수 있다. 세션 TTL 기본값은 240분이다.
 - 마이그레이션 lint: `npm run lint:migrations`로 번호 충돌 및 규약 위반을 커밋 전 검사.
 - 운영 가이드: [docs/operations/](docs/operations/) — LLM provider 체인, symbolic hard gate, agent worktree, upstream porting 등.
+- 외부 노출 점검: `docs/operations/maintenance.md`의 "외부 노출 점검" 절차로 listen 주소, 인증 키, Origin allowlist 상태를 확인.
 
 ## 알려진 제한사항
 
 - L1 Redis 캐시는 API 키 기반 격리만 지원한다. multi-agent 환경에서 에이전트 간 격리는 L2/L3에서 적용된다.
 - 자동 품질 평가는 decision, preference, relation 유형만 대상이다. fact, procedure, error는 평가 큐에서 제외된다.
 - MEMENTO_ACCESS_KEY를 설정하지 않으면 인증이 비활성화된다. 외부 노출 환경에서는 반드시 설정할 것.
-- ALLOWED_ORIGINS — 브라우저 기반 MCP 클라이언트 화이트리스트. 미설정 시 same-origin 외 차단.
+- ALLOWED_ORIGINS — 브라우저 기반 MCP 클라이언트 화이트리스트. 미설정 시 모든 Origin을 허용한다.
+  외부 노출 환경에서는 `MCP_STRICT_ORIGIN=true`와 함께 실제 사용하는 브라우저 Origin만 등록할 것.
   데스크탑/CLI/IDE 확장(Claude Code, Cursor, Windsurf, Continue, Cline, Zed, gemini CLI 등)은
   Origin 헤더를 보내지 않으므로 화이트리스트 불필요.
   브라우저 후보: claude.ai, claude.com, chatgpt.com, chat.openai.com, copilot.microsoft.com,
   gemini.google.com, aistudio.google.com, www.perplexity.ai, cursor.com, codeium.com,
   windsurf.com, sourcegraph.com, typingmind.com (실제 호출하는 것만 선별).
-- ADMIN_ALLOWED_ORIGINS — Admin UI 호출 origin 화이트리스트. 미설정 시 same-origin 외 차단.
+- ADMIN_ALLOWED_ORIGINS — Admin UI 호출 origin 화이트리스트. 미설정 시 모든 Origin을 허용한다.
+  외부 노출 환경에서는 관리 콘솔 Origin을 명시하거나 리버스 프록시/방화벽에서 접근을 제한할 것.
 - TRUST_PROXY_HOPS — 신뢰 가능한 리버스 프록시 hop 수. 미설정 시 기존 동작 유지(XFF 첫 항목).
   직접 노출 시 0, 단일 프록시 뒤에서는 1.
 - OAUTH_TRUSTED_ORIGINS — 동의 자동 승인 대상 origin 화이트리스트. 동일 origin에서 여러 앱을 호스팅하면

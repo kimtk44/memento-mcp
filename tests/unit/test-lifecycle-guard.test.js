@@ -13,13 +13,13 @@
  * Case 4: lib/sessions.js import + after 훅 정리 → clean (CP2 MEMENTO_METRICS_DEFAULT=off 의존)
  * Case 5: lib/memory/ReflectProcessor.js import + after 훅 정리 → clean
  *
- * 환경: MEMENTO_METRICS_DEFAULT=off (npm run test:unit:node 에서 주입됨)
+ * 환경: MEMENTO_METRICS_DEFAULT=off (npm test 에서 주입됨)
  */
 
 import { describe, it, after } from "node:test";
 import assert                  from "node:assert/strict";
 
-import { assertCleanShutdown } from "../_lifecycle.js";
+import { teardownTestResources, assertCleanShutdown } from "../_lifecycle.js";
 
 /* ── Case 1: 기본 import만 한 빈 테스트 ── */
 describe("Case 1: 빈 테스트 — clean shutdown", () => {
@@ -82,23 +82,14 @@ describe("Case 4: lib/sessions.js import + cleanup → clean shutdown", () => {
    * collectDefaultMetrics가 실행되지 않아야 한다. 만약 이 테스트가 assertCleanShutdown에서
    * Timeout handle을 감지한다면 CP2가 적용되지 않은 것이다.
    */
-  let redisClient;
-  let getPrimaryPool;
-
   after(async () => {
-    try { await redisClient?.quit(); }    catch (_) {}
-    try { await getPrimaryPool?.()?.end(); } catch (_) {}
+    await teardownTestResources();
     await assertCleanShutdown();
   });
 
   it("sessions.js import 후 정리 시 active handle 없음", async () => {
     /* dynamic import — 이 describe 블록의 after에서 정리 */
     const sessions = await import("../../lib/sessions.js");
-    const redis    = await import("../../lib/redis.js");
-    const db       = await import("../../lib/tools/db.js");
-
-    redisClient    = redis.redisClient;
-    getPrimaryPool = db.getPrimaryPool;
 
     assert.ok(sessions.createStreamableSession, "createStreamableSession export 확인");
   });
@@ -106,22 +97,13 @@ describe("Case 4: lib/sessions.js import + cleanup → clean shutdown", () => {
 
 /* ── Case 5: lib/memory/ReflectProcessor.js import + after 훅 정리 ── */
 describe("Case 5: ReflectProcessor.js import + cleanup → clean shutdown", () => {
-  let redisClient;
-  let getPrimaryPool;
-
   after(async () => {
-    try { await redisClient?.quit(); }    catch (_) {}
-    try { await getPrimaryPool?.()?.end(); } catch (_) {}
+    await teardownTestResources();
     await assertCleanShutdown();
   });
 
   it("ReflectProcessor.js import 후 정리 시 active handle 없음", async () => {
     const { ReflectProcessor } = await import("../../lib/memory/ReflectProcessor.js");
-    const redis                = await import("../../lib/redis.js");
-    const db                   = await import("../../lib/tools/db.js");
-
-    redisClient    = redis.redisClient;
-    getPrimaryPool = db.getPrimaryPool;
 
     assert.ok(typeof ReflectProcessor === "function", "ReflectProcessor export 확인");
   });

@@ -22,12 +22,11 @@ mock.module("../../lib/memory/MorphemeIndex.js", {
 });
 
 const { ReflectProcessor }  = await import("../../lib/memory/ReflectProcessor.js");
-const { redisClient }        = await import("../../lib/redis.js");
-const { assertCleanShutdown } = await import("../_lifecycle.js");
+const { teardownTestResources, assertCleanShutdown } = await import("../_lifecycle.js");
 
 /**
  * ReflectProcessor import 체인이 Redis ioredis 클라이언트를 즉시 연결하므로
- * 테스트 종료 후 명시적으로 quit하지 않으면 event loop가 유지되어
+ * 테스트 종료 후 lifecycle helper로 정리하지 않으면 event loop가 유지되어
  * node:test가 "Promise resolution is still pending" 메시지와 함께 cleanup hang.
  *
  * MEMENTO_METRICS_DEFAULT=off (CP2) 적용 후 prom-client collectDefaultMetrics
@@ -37,11 +36,7 @@ after(async () => {
   /** mock stub이라 즉시 settle되지만 _morphemePromises finally 콜백은
    *  microtask queue에 적재되므로 setImmediate로 한 tick 비워 drain한다. */
   await new Promise(r => setImmediate(r));
-  try { await redisClient.quit(); } catch (_) {}
-  try {
-    const { getPrimaryPool } = await import("../../lib/tools/db.js");
-    await getPrimaryPool()?.end();
-  } catch (_) {}
+  await teardownTestResources();
   await assertCleanShutdown();
 });
 

@@ -8,10 +8,13 @@
  * DB 없이 mock store로 동작한다.
  */
 
-import { describe, it, mock, before, after } from "node:test";
+import { describe, it, mock, after } from "node:test";
 import assert from "node:assert/strict";
 
 import { teardownTestResources } from "../_lifecycle.js";
+
+process.env.MEMENTO_SYMBOLIC_ENABLED = "true";
+process.env.MEMENTO_SYMBOLIC_PROACTIVE_GATE = "true";
 
 after(async () => { await teardownTestResources(); });
 
@@ -47,12 +50,22 @@ function makeMockDeps({ candidates = [], storeOverrides = {} } = {}) {
       tokenize              : mock.fn(async (t) => String(t).toLowerCase().split(/[\s,.]+/).filter(w => w.length > 1).slice(0, 10)),
       getOrRegisterEmbeddings: mock.fn(async () => undefined),
     },
+    claimConflictDetector: {
+      detectPolarityConflicts: mock.fn(async () => ({ conflicts: [] })),
+    },
   };
 }
 
 /* RememberPostProcessor 로드 */
 const { RememberPostProcessor } = await import("../../lib/memory/RememberPostProcessor.js");
 const { MEMORY_CONFIG }         = await import("../../config/memory.js");
+
+/** 테스트 대상 processor 생성: 게이트 검증과 무관한 DB update는 차단한다. */
+function makeProcessor(deps) {
+  const processor = new RememberPostProcessor(deps);
+  processor._updateMorphemeIndexed = async () => {};
+  return processor;
+}
 
 /** run 후 fire-and-forget Promise 대기 헬퍼 */
 async function runAndWait(processor, fragment, ctx) {
@@ -111,7 +124,7 @@ describe("ProactiveRecall gate — mode=off", () => {
     try {
       const candidate = makeCandidate();
       const deps      = makeMockDeps({ candidates: [candidate] });
-      const processor = new RememberPostProcessor(deps);
+      const processor = makeProcessor(deps);
 
       await runAndWait(processor, makeSource(), { agentId: "agent", keyId: null });
 
@@ -138,7 +151,7 @@ describe("ProactiveRecall gate — mode=auto, 동일 workspace+caseId", () => {
       const candidate = makeCandidate({ workspace_id: wsId, case_id: caseId });
       const source    = makeSource({ workspace_id: wsId, case_id: caseId });
       const deps      = makeMockDeps({ candidates: [candidate] });
-      const processor = new RememberPostProcessor(deps);
+      const processor = makeProcessor(deps);
 
       await runAndWait(processor, source, { agentId: "agent", keyId: null });
 
@@ -166,7 +179,7 @@ describe("ProactiveRecall gate — mode=auto, workspace 불일치", () => {
       const candidate = makeCandidate({ workspace_id: "ws-other" });
       const source    = makeSource({ workspace_id: "ws-mine" });
       const deps      = makeMockDeps({ candidates: [candidate] });
-      const processor = new RememberPostProcessor(deps);
+      const processor = makeProcessor(deps);
 
       await runAndWait(processor, source, { agentId: "agent", keyId: null });
 
@@ -191,7 +204,7 @@ describe("ProactiveRecall gate — mode=auto, caseId 불일치(both-required)", 
       const candidate = makeCandidate({ case_id: "debug-other-2026-05-19" });
       const source    = makeSource({ case_id: "debug-cpu-2026-05-19" });
       const deps      = makeMockDeps({ candidates: [candidate] });
-      const processor = new RememberPostProcessor(deps);
+      const processor = makeProcessor(deps);
 
       await runAndWait(processor, source, { agentId: "agent", keyId: null });
 
@@ -217,7 +230,7 @@ describe("ProactiveRecall gate — strict-or-adjacent, null caseId + 동일 sess
       const candidate = makeCandidate({ case_id: null, session_id: sessId });
       const source    = makeSource({ case_id: "debug-cpu-2026-05-19", session_id: sessId });
       const deps      = makeMockDeps({ candidates: [candidate] });
-      const processor = new RememberPostProcessor(deps);
+      const processor = makeProcessor(deps);
 
       await runAndWait(processor, source, { agentId: "agent", keyId: null });
 
@@ -255,7 +268,7 @@ describe("ProactiveRecall gate — strict-or-adjacent, 24h 초과 + 다른 sessi
         created_at: new Date().toISOString(),
       });
       const deps      = makeMockDeps({ candidates: [candidate] });
-      const processor = new RememberPostProcessor(deps);
+      const processor = makeProcessor(deps);
 
       await runAndWait(processor, source, { agentId: "agent", keyId: null });
 
@@ -280,7 +293,7 @@ describe("ProactiveRecall gate — both-required, 한쪽 caseId null", () => {
       const candidate = makeCandidate({ case_id: null });
       const source    = makeSource({ case_id: "debug-cpu-2026-05-19" });
       const deps      = makeMockDeps({ candidates: [candidate] });
-      const processor = new RememberPostProcessor(deps);
+      const processor = makeProcessor(deps);
 
       await runAndWait(processor, source, { agentId: "agent", keyId: null });
 
@@ -311,7 +324,7 @@ describe("ProactiveRecall gate — mode=legacy", () => {
         case_id     : "debug-cpu-2026-05-19",
       });
       const deps      = makeMockDeps({ candidates: [candidate] });
-      const processor = new RememberPostProcessor(deps);
+      const processor = makeProcessor(deps);
 
       await runAndWait(processor, source, { agentId: "agent", keyId: null });
 

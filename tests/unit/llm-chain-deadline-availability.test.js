@@ -82,18 +82,24 @@ describe("llmJson chain deadline availability budget", () => {
   });
 
   it("isAvailable promise가 끝나지 않아도 chain deadline에서 중단한다", async () => {
+    const originalNow = Date.now;
+    Date.now = () => now;
     providerCallCount = 0;
     availabilityMode = "hang";
     availabilityTimeouts.length = 0;
 
     const started = performance.now();
-    await assert.rejects(
-      () => llmJson("test"),
-      /chain deadline exceeded after 40ms/
-    );
+    try {
+      await assert.rejects(
+        () => llmJson("test"),
+        /chain deadline exceeded after 40ms/
+      );
 
-    assert.equal(providerCallCount, 0);
-    assert.equal(availabilityTimeouts[0], 40);
-    assert.ok(performance.now() - started < 200);
+      assert.equal(providerCallCount, 0);
+      assert.equal(availabilityTimeouts[0], 40);
+      assert.ok(performance.now() - started < 200);
+    } finally {
+      Date.now = originalNow;
+    }
   });
 });

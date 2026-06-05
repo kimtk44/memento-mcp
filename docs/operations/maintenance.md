@@ -8,6 +8,34 @@
 
 ---
 
+## 외부 노출 점검
+
+memento-mcp가 localhost 밖에 노출되는지와 브라우저 Origin 정책이 의도대로 설정됐는지 확인한다.
+
+```bash
+ss -ltnp | grep ':57332'
+grep -E '^(MEMENTO_ACCESS_KEY|MCP_STRICT_ORIGIN|ALLOWED_ORIGINS|ADMIN_ALLOWED_ORIGINS|TRUST_PROXY_HOPS)=' .env | sed -E 's/=.*/=<set>/'
+```
+
+판단 기준:
+
+- `*:57332` 또는 `0.0.0.0:57332`이면 네트워크 전체 인터페이스에 노출된다.
+- 외부 노출 환경에서는 `MEMENTO_ACCESS_KEY`를 반드시 설정한다.
+- 브라우저 기반 MCP 클라이언트를 허용할 때는 `MCP_STRICT_ORIGIN=true`와 `ALLOWED_ORIGINS`를 함께 설정한다.
+- Admin UI를 브라우저에서 열면 `ADMIN_ALLOWED_ORIGINS`를 명시하거나 리버스 프록시/방화벽에서 접근을 제한한다.
+- 리버스 프록시 뒤에서 IP 기반 제한을 쓰면 실제 프록시 hop 수에 맞춰 `TRUST_PROXY_HOPS`를 설정한다.
+
+Smoke test:
+
+```bash
+curl -si http://localhost:57332/health | head
+curl -si -H 'Origin: https://evil.example' http://localhost:57332/mcp | head
+```
+
+`MCP_STRICT_ORIGIN=false`에서는 등록되지 않은 Origin도 CORS만으로 차단되지 않을 수 있다. `MCP_STRICT_ORIGIN=true`에서는 허용 목록에 없는 Origin이 403이어야 한다.
+
+---
+
 ## 메트릭 모니터링
 
 서버 건전성 지표를 확인하는 두 가지 경로다. 목적에 따라 선택한다.

@@ -1,11 +1,20 @@
-import { test, describe } from "node:test";
-import assert             from "node:assert/strict";
-import { ReflectProcessor } from "../../lib/memory/ReflectProcessor.js";
+import { test, describe, after } from "node:test";
+import assert                    from "node:assert/strict";
+import { ReflectProcessor }      from "../../lib/memory/ReflectProcessor.js";
+import { teardownTestResources, assertCleanShutdown } from "../_lifecycle.js";
+
+let proc;
+
+after(async () => {
+  await proc?.drainMorpheme?.();
+  await teardownTestResources();
+  await assertCleanShutdown();
+});
 
 describe("ReflectProcessor episode 저장", () => {
   test("narrative episode remember는 skipConflictDetection=true로 호출된다", async () => {
     const rememberCalls = [];
-    const proc = new ReflectProcessor({
+    proc = new ReflectProcessor({
       store: { insert: async () => "id", },
       index: { index: async () => {}, clearWorkingMemory: async () => {} },
       factory: { create: (p) => ({ ...p, keywords: [] }), splitAndCreate: () => [] },

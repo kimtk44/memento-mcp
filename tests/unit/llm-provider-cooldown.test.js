@@ -15,12 +15,10 @@ import assert                    from "node:assert/strict";
 import { OllamaProvider }            from "../../lib/llm/providers/OllamaProvider.js";
 import { OpenAICompatibleProvider }  from "../../lib/llm/providers/OpenAICompatibleProvider.js";
 import { circuitBreaker }            from "../../lib/llm/util/circuit-breaker.js";
-import { disconnectRedis }           from "../../lib/redis.js";
-import { getPrimaryPool }            from "../../lib/tools/db.js";
+import { teardownTestResources } from "../_lifecycle.js";
 
 after(async () => {
-  await disconnectRedis().catch(() => {});
-  await getPrimaryPool()?.end?.().catch(() => {});
+  await teardownTestResources();
 });
 
 /**
