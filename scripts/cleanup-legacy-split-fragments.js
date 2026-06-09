@@ -27,7 +27,7 @@ export function buildSelectionWhere() {
     `       AND access_count = 0\n` +
     `       AND NOT EXISTS (\n` +
     `             SELECT 1 FROM ${SCHEMA}.fragments parent\n` +
-    `             WHERE parent.id = split_part(fragments.source, ':', 2)::uuid\n` +
+    `             WHERE parent.id = split_part(fragments.source, ':', 2)\n` +
     `               AND parent.valid_to IS NULL\n` +
     `       )`
   );
