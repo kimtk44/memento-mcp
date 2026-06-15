@@ -1,7 +1,7 @@
 # API Reference
 
 작성자: 최진호
-수정일: 2026-04-27
+수정일: 2026-06-16
 
 MCP 도구 상세는 [SKILL.md](../SKILL.md) 참조.
 
@@ -600,6 +600,21 @@ violations 있는 경우 (soft gate — 저장됨):
 | fragments | object[] | O | 저장할 파편 배열 (최대 200건). 각 항목은 content(string, 필수), topic(string, 필수), type(string, 필수), importance(number), keywords(string[]), workspace(string), idempotencyKey(string, 최대 128자) 포함. |
 | workspace | string | - | 배치 기본 워크스페이스. 개별 파편에 workspace 미지정 시 이 값으로 대체. 미지정 시 키의 default_workspace 적용. |
 | agentId | string | - | 에이전트 ID (RLS 격리용) |
+| stream | boolean | - | true 시 text/event-stream 진행 이벤트 송신. 각 처리 단계(Phase A/B/C)마다 progress 이벤트가 발행되고 완료 시 result 이벤트로 최종 응답을 수신한다. 클라이언트가 Accept: text/event-stream 헤더를 보내도 동일하게 활성화된다. |
+| async | boolean | - | true 시 파이어앤포겟(비동기) 모드 (기본 false). 스키마 유효성·content_hash 중복·할당량 선검증만 동기 수행한 뒤 통과 파편을 Redis 큐에 적재하고 즉시 `{async: true, accepted: N, rejected: N, jobId: "..."}` 를 반환한다. 본 INSERT는 백그라운드 워커(BatchRememberWorker)가 처리한다. Redis 비활성(REDIS_ENABLED=false) 환경에서는 async=true여도 동기 모드로 폴백한다. |
+
+### async=true 응답 예시
+
+```json
+{
+  "async": true,
+  "accepted": 5,
+  "rejected": 1,
+  "jobId": "batch-1750000000000-a1b2c3d4"
+}
+```
+
+동기 모드(기본)에서는 `results[]` 배열이 반환된다. `jobId`는 추적용 식별자로, 서버 로그에서 확인할 수 있다. 큐 유실 시 자동 재처리는 없다.
 
 ### 사전 validate 에러 코드
 
@@ -971,7 +986,7 @@ curl -si -X POST https://memento.example.com/mcp \
 |-|-|-|
 | `MEMENTO_REMEMBER_ATOMIC` | `false` | `true` 시 remember 경로가 `_rememberAtomic`으로 전환. `SELECT api_keys FOR UPDATE` + 단일 BEGIN/COMMIT 트랜잭션으로 quota 재검증과 INSERT를 원자적으로 처리. `_runPolicyGate`는 양 경로 모두 동일하게 실행되므로 `validation_warnings` 포맷에 차이 없음. |
 | `MEMENTO_CASE_BACKPROP_ENABLED` | `false` | `true` 시 case_id를 가진 파편의 amend(resolutionStatus 변경) 시점에 동일 caseId 파편들의 importance를 역전파 조정. `lib/config.js`의 `CASE_BACKPROP_ENABLED` 상수로 export. case 해결 완료 시 관련 파편의 활성화 점수가 상향되어 이후 recall 정밀도를 높인다. |
-| `MEMENTO_STORAGE` | `pgvector` | 스토리지 어댑터 선택. `pgvector`(기본, 프로덕션용 PgVectorStore) 또는 `sqlite-vec`(v4.1 예정 stub, SqliteVecStore). 어댑터 교체 시 `transaction(fn)` 인터페이스가 유지되므로 write 경로 동시성 시맨틱은 동일하게 보존됨. |
+| `MEMENTO_STORAGE` | `pgvector` | 스토리지 어댑터 선택. `pgvector`(기본, 프로덕션용 PgVectorStore) 또는 `sqlite-vec`(SqliteVecStore). 어댑터 교체 시 `transaction(fn)` 인터페이스가 유지되므로 write 경로 동시성 시맨틱은 동일하게 보존됨. |
 | `MEMENTO_SYMBOLIC_POLICY_RULES` | `false` | `true` 시 `_runPolicyGate`가 PolicyRules soft gate를 평가하여 위반 rule 이름을 `validation_warnings`에 누적. |
 
 ---
