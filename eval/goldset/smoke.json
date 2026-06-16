@@ -1,0 +1,26 @@
+[
+  { "qid": "smoke-01", "split": "smoke", "lang": "en", "query_type": "keywords",
+    "query": "amdgpu hwmon eperm",
+    "relevant_ids": ["frag-6205cd979d4c0acf"], "alternates": [],
+    "difficulty": "easy", "hard_case": null },
+
+  { "qid": "smoke-02", "split": "smoke", "lang": "en", "query_type": "keywords",
+    "query": "amdvlk radv khr-coopmat",
+    "relevant_ids": ["frag-5c9a54c724aa1141"], "alternates": [],
+    "difficulty": "easy", "hard_case": null },
+
+  { "qid": "smoke-03", "split": "smoke", "lang": "en", "query_type": "keywords",
+    "query": "autohotkey ahk-v2 v1-migration",
+    "relevant_ids": ["frag-4980fa98fc8db025"], "alternates": [],
+    "difficulty": "easy", "hard_case": null },
+
+  { "qid": "smoke-04", "split": "smoke", "lang": "en", "query_type": "keywords",
+    "query": "anthropic-policy oauth-allowed api-direct-hooking-banned",
+    "relevant_ids": ["frag-ab34835d5ea06bb1"], "alternates": [],
+    "difficulty": "med", "hard_case": null },
+
+  { "qid": "smoke-05", "split": "smoke", "lang": "mixed", "query_type": "keywords",
+    "query": "ai-materialization youtube-자동화-goal1",
+    "relevant_ids": ["frag-8ce0a32f063fe321"], "alternates": [],
+    "difficulty": "med", "hard_case": null }
+]
