@@ -50,8 +50,15 @@ bash eval/variance.sh eval/goldset/phase1.json 3
 ## Baseline state (2026-06-16, post-bugfix)
 overall recall@20 = 0.625, recall@5 = 0.292, mrr = 0.304.
 - keyword recall@20 = 0.923 (L1/L2 healthy).
-- text/semantic recall@20 = 0.200 — genuine semantic-ranking quality gap
-  (HNSW-approx / reranker / RRF), **the Phase 2 target** (not a bug).
+- text/semantic recall@20 = 0.200 — **the Phase 2 target** (not a bug).
+  Ablation (2026-06-16) pinpoints the loss: raw pgvector exact cosine = 10/10
+  rank-1 AND HNSW `searchBySemantic`(minSim=0) = 10/10 rank-1, but recall() final
+  = 2/10. So embeddings + HNSW + candidate-gen are perfect; the loss is entirely
+  in the **post-L3 pipeline** (RRF fusion + cross-encoder reranker + MMR +
+  minSim/token-trim). Prime suspect: the reranker demoting rank-1 semantic
+  matches (esp. Korean/cross-lingual). This INVERTS the roadmap's Phase 2
+  assumption (morpheme hybrid / doc2query) — embeddings are already perfect;
+  Phase 2 should fix the post-L3 pipeline, reranker first.
 
 The first baseline run surfaced (and we fixed) two retrieval bugs:
 1. `hnsw.iterative_scan` (pgvector 0.8+ param) set on pgvector 0.6.0 → L3 dead.
