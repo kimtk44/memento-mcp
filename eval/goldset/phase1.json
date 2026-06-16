@@ -1,0 +1,27 @@
+[
+  { "qid":"p01","split":"dev","lang":"en","query_type":"keywords","query":"amdgpu hwmon eperm runtime","relevant_ids":["frag-6205cd979d4c0acf"],"alternates":[],"difficulty":"easy","hard_case":null },
+  { "qid":"p02","split":"dev","lang":"mixed","query_type":"keywords","query":"tailscale serve https tailnet","relevant_ids":["frag-8c92a6312d053f30"],"alternates":["frag-cf5059149fe5f02d"],"difficulty":"easy","hard_case":null },
+  { "qid":"p03","split":"test","lang":"mixed","query_type":"keywords","query":"llama-cpp vulkan multi-gpu tensor-split","relevant_ids":["frag-b1db2484ab44cd5c"],"alternates":[],"difficulty":"easy","hard_case":null },
+  { "qid":"p04","split":"test","lang":"en","query_type":"keywords","query":"vlc rtsp cctv viewer","relevant_ids":["frag-1a69dcb0ec2df921"],"alternates":[],"difficulty":"easy","hard_case":null },
+  { "qid":"p05","split":"dev","lang":"mixed","query_type":"keywords","query":"hermes-webui cli-session-import skills-panel","relevant_ids":["frag-43950056d0493efb"],"alternates":[],"difficulty":"easy","hard_case":null },
+  { "qid":"p06","split":"test","lang":"mixed","query_type":"keywords","query":"external-verification red-team repo-vs-norepo","relevant_ids":["frag-8d451be0821016d7"],"alternates":[],"difficulty":"easy","hard_case":null },
+  { "qid":"p07","split":"dev","lang":"mixed","query_type":"keywords","query":"tool-recording-standard doc_role spec journal","relevant_ids":["frag-adc6e7850fad6b8a"],"alternates":[],"difficulty":"easy","hard_case":null },
+  { "qid":"p08","split":"test","lang":"mixed","query_type":"keywords","query":"tier-prompt init-compile policy.yaml","relevant_ids":["frag-c0d5ccda6dd370d1"],"alternates":[],"difficulty":"easy","hard_case":null },
+  { "qid":"p09","split":"dev","lang":"mixed","query_type":"keywords","query":"harness-mismatch scaffold local frontier gap","relevant_ids":["frag-2ad5f36502bab389"],"alternates":[],"difficulty":"med","hard_case":null },
+  { "qid":"p10","split":"probe","lang":"mixed","query_type":"keywords","query":"hermes config.yaml disabled skills audit","relevant_ids":["frag-79722ee54220a8c9"],"alternates":[],"difficulty":"med","hard_case":null },
+  { "qid":"p11","split":"test","lang":"mixed","query_type":"keywords","query":"moe dense rdson stock-q4 probe","relevant_ids":["frag-7af4fc57748fb671"],"alternates":[],"difficulty":"med","hard_case":null },
+  { "qid":"p12","split":"dev","lang":"mixed","query_type":"keywords","query":"llmwiki-trial llama-swap provider atomicstrata","relevant_ids":["frag-51f4821620293b54"],"alternates":[],"difficulty":"med","hard_case":null },
+  { "qid":"p13","split":"probe","lang":"ko","query_type":"keywords","query":"청구빌딩 taildrop backlog 회수","relevant_ids":["frag-f50fa100fc585d57"],"alternates":[],"difficulty":"easy","hard_case":null },
+  { "qid":"p14","split":"test","lang":"mixed","query_type":"topic","query":"chunggu-tailscale-enhancements","relevant_ids":["frag-cf5059149fe5f02d"],"alternates":[],"difficulty":"med","hard_case":null },
+
+  { "qid":"c01","split":"dev","lang":"ko","query_type":"text","query":"온도 센서 값을 읽으려는데 권한이 거부되고 장치가 절전 상태로 멈춰 있을 때 해결 방법","relevant_ids":["frag-6205cd979d4c0acf"],"alternates":[],"difficulty":"hard","hard_case":"surface-token-0" },
+  { "qid":"c02","split":"test","lang":"en","query_type":"text","query":"how to expose a local service over the private mesh network with automatic TLS certificates","relevant_ids":["frag-8c92a6312d053f30"],"alternates":["frag-cf5059149fe5f02d"],"difficulty":"hard","hard_case":"cross-lingual" },
+  { "qid":"c03","split":"dev","lang":"ko","query_type":"text","query":"작은 모델인데도 카드 두 장에 나뉘어 올라가서 한쪽 메모리만 가득 차는 이유","relevant_ids":["frag-b1db2484ab44cd5c"],"alternates":[],"difficulty":"hard","hard_case":"surface-token-0" },
+  { "qid":"c04","split":"test","lang":"en","query_type":"text","query":"save tokens by delegating document edits to a CLI model then hand-reviewing for hallucinated data","relevant_ids":["frag-89cfbc41a2c4fd56"],"alternates":[],"difficulty":"hard","hard_case":"cross-lingual" },
+  { "qid":"c05","split":"dev","lang":"ko","query_type":"text","query":"LLM용 가이드 문서는 사람 대상 규칙 설명만으로는 부족하고 직접 지시하는 명령문이 필요하다","relevant_ids":["frag-349a25f0a2ca8bcd"],"alternates":[],"difficulty":"med","hard_case":"synonym" },
+  { "qid":"c06","split":"test","lang":"en","query_type":"text","query":"verify that filenames produced by a grep pipeline actually exist before acting on them","relevant_ids":["frag-f4a2288d792d0cf9"],"alternates":[],"difficulty":"hard","hard_case":"cross-lingual" },
+  { "qid":"c07","split":"probe","lang":"ko","query_type":"text","query":"두 개의 색인 문서에 같은 항목을 넣을 때 서로 가리키도록 한 줄 추가하는 방법","relevant_ids":["frag-778895337693af3a"],"alternates":[],"difficulty":"hard","hard_case":"surface-token-0" },
+  { "qid":"c08","split":"dev","lang":"en","query_type":"text","query":"why do local models underperform cloud ones is it the scaffolding rather than the model itself","relevant_ids":["frag-2ad5f36502bab389"],"alternates":[],"difficulty":"hard","hard_case":"cross-lingual" },
+  { "qid":"c09","split":"probe","lang":"ko","query_type":"text","query":"외부 리뷰어에게 코드 검증을 맡길 때 프롬프트에서 강조해야 하는 항목들","relevant_ids":["frag-8d451be0821016d7"],"alternates":[],"difficulty":"med","hard_case":"synonym" },
+  { "qid":"c10","split":"test","lang":"en","query_type":"text","query":"import a command-line session into the web interface and how it is visually highlighted","relevant_ids":["frag-43950056d0493efb"],"alternates":[],"difficulty":"hard","hard_case":"cross-lingual" }
+]
