@@ -49,6 +49,12 @@ FRAG_COUNT=$(psql -tA -h "${HOST}" -U "${PGUSER_}" -d "${EVAL_DB}" \
   -c "SELECT count(*) FROM ${SCHEMA}.fragments WHERE valid_to IS NULL;")
 echo "      restored active fragments: ${FRAG_COUNT}"
 
+echo "=== [4b/6] apply migration-038 (morpheme_dict dim 1536->1024) to ${EVAL_DB} ==="
+# The live dump carries the stale vector(1536) morpheme_dict; fix it post-restore
+# so the L3 morpheme sub-path works (derived cache, lazily repopulated).
+psql -q -v ON_ERROR_STOP=1 -h "${HOST}" -U "${PGUSER_}" -d "${EVAL_DB}" \
+  -f "$(dirname "$0")/../lib/memory/migration-038-morpheme-dict-dim-fix.sql"
+
 echo "=== [5/6] FLUSH eval Redis db ${REDIS_DB_IDX} (never db 0) ==="
 redis-cli -n "${REDIS_DB_IDX}" FLUSHDB
 
