@@ -47,6 +47,11 @@ mock.module("../../lib/logger.js", {
 describe("BatchRememberWorker reliability", () => {
   beforeEach(() => {
     for (const k of Object.values(reliable)) k.mock.resetCalls();
+    // resetCalls()는 호출 기록만 지우므로, 케이스가 교체한 구현을 기본값으로 복원한다.
+    reliable.ack.mock.mockImplementation(async () => true);
+    reliable.requeue.mock.mockImplementation(async () => 0);
+    reliable.push.mock.mockImplementation(async () => true);
+    reliable.pushDead.mock.mockImplementation(async () => true);
   });
 
   test("성공 job은 ack되고 dead-letter로 가지 않는다", async () => {
@@ -71,8 +76,21 @@ describe("BatchRememberWorker reliability", () => {
       data: { jobId: "j2", params: { fragments: [] }, retryCount: 0 }
     });
     assert.equal(reliable.push.mock.callCount(), 1, "재적재");
+    assert.equal(reliable.push.mock.calls[0].arguments[1].retryCount, 1, "retryCount 증가");
     assert.equal(reliable.ack.mock.callCount(), 1, "원본 ack");
     assert.equal(reliable.pushDead.mock.callCount(), 0);
+  });
+
+  test("재적재 실패 시 ack하지 않는다(processing 잔류→복구)", async () => {
+    const { BatchRememberWorker } = await import("../../lib/memory/BatchRememberWorker.js");
+    reliable.push.mock.mockImplementation(async () => false);
+    const processor = { process: mock.fn(async () => { throw new Error("db down"); }) };
+    const w = new BatchRememberWorker(processor);
+    await w._processJobEnvelope({
+      raw : "RAW4",
+      data: { jobId: "j4", params: { fragments: [] }, retryCount: 0 }
+    });
+    assert.equal(reliable.ack.mock.callCount(), 0, "ack 보류");
   });
 
   test("재시도 한도 초과 job은 dead-letter로 이동 후 ack", async () => {
