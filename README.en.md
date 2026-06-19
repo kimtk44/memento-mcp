@@ -108,6 +108,13 @@ claude mcp list
 
 For project-scoped sharing, declare the server in `.mcp.json` at the repository root instead. See [Claude Code Configuration](docs/getting-started/claude-code.md) for details.
 
+### Codex Desktop Integration
+
+Some MCP clients such as Codex Desktop use deferred/lazy tool discovery. tool_search may expose only a subset of tools depending on the query and limit, so recall — which always exists in tools/list — can be missing from storage-biased queries with a low limit. If recall is not visible, retry with a broader query and limit 20 or above. Recommendation: seed this retry rule into the agent system prompt/instructions upfront to prevent the initial discovery loop.
+
+- query: `memento context recall remember reflect batch_remember search_traces reconstruct_history`
+- limit: 20 or above
+
 ### Supported Environments
 
 | Environment | Recommendation | Getting Started |

@@ -108,6 +108,13 @@ claude mcp list
 
 프로젝트 단위로 공유하려면 저장소 루트의 `.mcp.json`에 기재한다. 상세 설정은 [Claude Code Configuration](docs/getting-started/claude-code.md) 참조.
 
+### Codex Desktop 연동
+
+Codex Desktop 등 일부 MCP 클라이언트는 deferred/lazy tool discovery를 쓴다. tool_search가 검색어와 limit에 따라 일부 도구만 노출하므로, 항상 존재하는 recall이 저장 편향 쿼리+낮은 limit에서 빠질 수 있다. recall이 안 보이면 더 넓은 쿼리와 limit 20 이상으로 재검색한다. 권장: 에이전트 system prompt/instructions에 이 재검색 규칙을 미리 심어 초기 discovery 루프를 차단한다.
+
+- query: `memento context recall remember reflect batch_remember search_traces reconstruct_history`
+- limit: 20 이상
+
 ### 지원 환경
 
 | 환경 | 권장도 | 시작 문서 |
