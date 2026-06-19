@@ -575,7 +575,41 @@ Store multiple fragments at once (for bulk memory input). Batch INSERTs up to 20
 }
 ```
 
-In synchronous mode (default), a `results[]` array is returned. `jobId` is a tracking identifier visible in server logs. No automatic retry on queue loss.
+In synchronous mode (default), a `results[]` array is returned. Use the `batch_status` tool with `jobId` to query processing state. The async worker guarantees at-least-once delivery via ack, retry (up to 3), dead-letter, and startup recovery (RPOPLPUSH reliable queue).
+
+---
+
+## MCP Tool — batch_status
+
+Query the processing state of an async batch job started by `batch_remember(async: true)`. Read-only. Returns `status: null` when Redis is disabled.
+
+### Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| jobId | string | Y | The `jobId` from a `batch_remember(async: true)` response |
+
+### Response
+
+| Field | Type | Description |
+|-------|------|-------------|
+| jobId | string | The queried jobId |
+| state | string | `queued` \| `processing` \| `completed` \| `dead` |
+| accepted | number | Fragments enqueued |
+| processed | number | Fragments successfully processed |
+| failed | number | Fragments that failed processing |
+
+### Response Example
+
+```json
+{
+  "jobId": "batch-1750000000000-a1b2c3d4",
+  "state": "completed",
+  "accepted": 5,
+  "processed": 5,
+  "failed": 0
+}
+```
 
 ---
 
