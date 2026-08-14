@@ -219,8 +219,9 @@ describe("ReflectProcessor - session consolidation", () => {
     const processor = new ReflectProcessor(deps);
 
     const result = await processor.process({
-      sessionId: "sess-1",
-      agentId  : "test-agent",
+      sessionId  : "sess-1",
+      agentId    : "test-agent",
+      consolidate: true,
     });
 
     assert.equal(deps.sessionLinker.consolidateSessionFragments.mock.callCount(), 1);
@@ -228,11 +229,35 @@ describe("ReflectProcessor - session consolidation", () => {
     assert.equal(result.breakdown.decisions, 1);
   });
 
+  it("consolidate 미지정 시 consolidateSessionFragments 미호출 (2026-06-28 cross-session fix)", async () => {
+    const deps = createMockDeps({
+      sessionLinker: {
+        consolidateSessionFragments: mock.fn(async () => ({
+          summary  : ["타 대화 파편이 종합되면 안 됨"],
+          decisions: ["혼입되면 안 되는 결정"],
+        })),
+        autoLinkSessionFragments: mock.fn(async () => {}),
+      },
+    });
+    const processor = new ReflectProcessor(deps);
+
+    const result = await processor.process({
+      sessionId        : "sess-shared",
+      agentId          : "test-agent",
+      narrative_summary: "명시 서사만 저장되어야 한다",
+    });
+
+    /** 기본(consolidate 미지정) 경로: 종합 미호출 → 자동 summary/decisions 미생성 */
+    assert.equal(deps.sessionLinker.consolidateSessionFragments.mock.callCount(), 0);
+    assert.equal(result.breakdown.summary, 0);
+    assert.equal(result.breakdown.decisions, 0);
+  });
+
   it("sessionId 존재 시 clearWorkingMemory 호출", async () => {
     const deps      = createMockDeps();
     const processor = new ReflectProcessor(deps);
 
-    await processor.process({ sessionId: "sess-1", agentId: "test-agent" });
+    await processor.process({ sessionId: "sess-1", agentId: "test-agent", consolidate: true });
 
     assert.equal(deps.index.clearWorkingMemory.mock.callCount(), 1);
     assert.equal(deps.index.clearWorkingMemory.mock.calls[0].arguments[0], "sess-1");
