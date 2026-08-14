@@ -1,7 +1,5 @@
 # Internals
 
-> v4.6.0
-
 ## MemoryManager (Orchestration Layer)
 
 MemoryManager is a thin facade. Business logic is delegated to 4 processors under `lib/memory/processors/`.
@@ -33,7 +31,7 @@ Search-related modules are separated into `lib/memory/read/`.
 | `SearchScope` (`lib/memory/read/SearchScope.js`) | A single contract object that consistently passes workspace, caseId, resolutionStatus, phase, and affect filters to all search layers |
 | `SearchSideEffects` (`lib/memory/read/SearchSideEffects.js`) | Isolates post-search side effects (search event persistence, SearchParamAdaptor learning signal) into a single module |
 
-In v3.x, FragmentSearch was located at `lib/memory/FragmentSearch.js`. Starting in v4.0.0, search-related modules were moved to `lib/memory/read/`. A stub compatibility layer remains at the old path for backward compatibility.
+Search-related modules live under `lib/memory/read/`; import paths follow the actual file locations directly.
 
 **Facade constructor flow:** Initializes 20 shared objects → injects into 4 processors via DI → calls `_installSharedSync()`. All 15 public methods are implemented as single-line delegations.
 
@@ -100,9 +98,9 @@ recall(query)
         post-processing correction is needed here; only searchEventId is returned.
 ```
 
-`pickFields` removes fields outside the 17-item whitelist (`id, content, type, importance, topic, ...`). It is not applied to cache stages (L1 warm hits, RRF intermediate objects) to preserve cache efficiency.
+`pickFields` removes fields outside the 19-item whitelist (`id, content, type, importance, topic, ..., key_id, key_name`). It is not applied to cache stages (L1 warm hits, RRF intermediate objects) to preserve cache efficiency.
 
-**SearchScope contract:** The `SearchScope.fromQuery(sq)` static factory creates a scope instance from the normalized sq returned by `_buildSearchQuery()`. The `scope.applyTo(fragment)` method checks workspace, caseId, resolutionStatus, phase, and affect simultaneously and returns false to exclude a fragment from results. HotCache, L3, and graph call sites all reference the same instance, ensuring consistent filtering across layers. Prior to v4.0.0, a separate post-processing correction step ran after `_executeSearch()`. The introduction of SearchScope eliminated this step.
+**SearchScope contract:** The `SearchScope.fromQuery(sq)` static factory creates a scope instance from the normalized sq returned by `_buildSearchQuery()`. The `scope.applyTo(fragment)` method checks workspace, caseId, resolutionStatus, phase, and affect simultaneously and returns false to exclude a fragment from results. HotCache, L3, and graph call sites all reference the same instance, ensuring consistent filtering across layers. `_executeSearch()` performs no separate post-processing correction step.
 
 ---
 
@@ -142,7 +140,7 @@ Stages are declared as a `stageDefs` array. Adding a new stage requires only a s
 14. `detect_contradictions` — 3-stage hybrid contradiction detection. pgvector cosine > 0.85 candidate extraction -> mDeBERTa NLI -> Gemini CLI escalation. Results returned as separate `nliResolvedDirectly` and `nliSkippedAsNonContra` counts
 15. `detect_supersessions` — Gemini CLI judges supersession relationships for fragment pairs with embedding similarity 0.7~0.85. Operates complementarily to GraphLinker's >= 0.85 range
 16. `process_pending_contradictions` — when Gemini CLI is available, dequeues up to 10 items from Redis pending queue for re-evaluation
-17. `feedback_report` — generates aggregated usefulness report from tool_feedback/task_feedback
+17. `feedback_report` — generates aggregated usefulness report from tool_feedback/task_feedback. When at least one irrelevant judgement exists, appends a cause distribution table (not_stored/search_miss/scope_leak/topic_mismatch/other/unreported); the task-level section adds the outcome distribution, the number of sessions reporting an outcome, sessions judged by a human evaluator, and sessions carrying unmet requirements. It warns against over-reading the success rate when outcomes go unreported, and flags possible self-report bias when the success rate is 100% while unreported sessions outnumber reported ones
 18. `feedback_calibration` — aggregates tool_feedback by session over the last 7 days, then applies a multiplier via the `feedbackFactor(allRelevant, allSufficient)` pure function (lib/memory/consolidate/feedbackFactor.js). POSITIVE (allRelevant=true AND allSufficient=true): ×1.1, MIXED (allRelevant=true AND allSufficient=false): ×0.95, NEGATIVE (allRelevant=false): ×0.85. Excludes `is_anchor=true`, clamped to [0.05, 1.0]
 19. `prune_keyword_indexes` — removes orphaned Redis keyword indexes
 20. `collect_stale_fragments` — collects fragments past their verification cycle; written to results.stale_fragments
@@ -202,7 +200,7 @@ Admin module tests are planned to migrate to directly importing `assets/admin/mo
 
 ### Workspace Filter Propagation
 
-`FragmentSearch._buildSearchQuery()` normalizes the `workspace` value into `sq.workspace`. `_executeSearch()` passes it to L2 (keyword/topic) search options and as the 8th argument to L3 `searchBySemantic`.
+`FragmentSearch._buildSearchQuery()` normalizes the `workspace` value into `sq.workspace`. `_executeSearch()` passes it to L2 (keyword/topic) search options and as the `workspace` field of the L3 `searchBySemantic` options object. `searchBySemantic` takes `(queryEmbedding, opts)` rather than positional filters, and `opts` also carries the explicit `type` / `topic` scope.
 
 All six `FragmentReader` methods — `searchByKeywords`, `searchByTopic`, `searchBySemantic`, `searchByTimeRange`, `searchAsOf`, and `searchBySource` — support the `(workspace = $N OR workspace IS NULL)` condition. `_searchTemporal` also passes `workspace: sq.workspace` to `searchByTimeRange`.
 
@@ -224,7 +222,7 @@ Trigger condition: `(now - session.lastAccessedAt) > idleThresholdMs` AND (`sess
 
 ### SessionActivityTracker.getUnreflectedSessions Upper Bound
 
-`getUnreflectedSessions(limit)` in `lib/memory/SessionActivityTracker.js` scans Redis for `frag:activity:*` keys. To prevent infinite iteration over a large keyspace, a `MAX_SCANS=20` upper bound is enforced. Each SCAN call passes `COUNT 50`, so at most 20 × 50 = 1,000 keys are processed before stopping. Early exit also occurs when `limit` is reached first.
+`getUnreflectedSessions(limit)` in `lib/memory/processors/SessionActivityTracker.js` scans Redis for `frag:activity:*` keys. To prevent infinite iteration over a large keyspace, a `MAX_SCANS=20` upper bound is enforced. Each SCAN call passes `COUNT 50`, so at most 20 × 50 = 1,000 keys are processed before stopping. Early exit also occurs when `limit` is reached first.
 
 ### Redis TTL Sync
 
@@ -238,9 +236,15 @@ When an SSE stream closes (`res.on('close')`), the server removes only the SSE r
 
 When refreshing a token via `POST /token` with `grant_type=refresh_token`, the `is_api_key` flag from the original token is propagated to the newly issued access_token and refresh_token. API key-based clients retain the same isolation context after a refresh.
 
-### SESSION_TTL Default Change
+### SESSION_TTL Default
 
-The default value of the `SESSION_TTL` environment variable changed from 240 to 43200 minutes (30 days). Sessions use a sliding window — the TTL is extended on every tool use, so sessions expire only after 30 days of inactivity. Actively used sessions effectively never expire.
+The `SESSION_TTL` environment variable defaults to 43200 minutes (30 days). Sessions use a sliding window — the TTL is extended on every tool use, so sessions expire only after 30 days of inactivity. Actively used sessions effectively never expire.
+
+### initialize request pre-auth IP rate limit
+
+`handleMcpPost` applies an IP-based rate limit to session-less (`!sessionId`) `initialize` requests before calling `_createInitializeSession()` (and the authentication / `api_keys` lookup inside it). When `rateLimiter.allow(clientIp, null)` returns false, the handler immediately returns 429 (with a `Retry-After` header) and increments the `mcp_initialize_ip_rate_limited_total` counter via `recordInitializeIpRateLimited()`. The goal is to stop a burst of unauthenticated initialize requests from reaching the DB lookup stage.
+
+This pre-check uses the IP bucket with `keyId=null`; `DualRateLimiter`'s IP bucket and key bucket are independent (an authenticated key bucket for the same IP is consumed separately). Initialize requests that pass the pre-check are excluded from the later general rate-limit branch (`!isInitializeRequest(msg) && !rateLimiter.allow(clientIp, sessionKeyId)`), so the same IP bucket is not double-consumed.
 
 ---
 
@@ -258,12 +262,24 @@ Caches query text embedding vectors in Redis within `FragmentSearch._searchL3()`
 
 ---
 
+## Embedding Call Hardening (`lib/tools/embedding.js`)
+
+Both `generateEmbedding` and `generateBatchEmbeddings` wrap external embedding API calls with two layers.
+
+**Per-call absolute timeout:** `client.embeddings.create()` is called with `AbortSignal.timeout(EMBEDDING_TIMEOUT_MS)` (default 8000ms). The OpenAI-compatible client's own retry logic (`EMBEDDING_MAX_RETRIES`, default 0) defaults to 0 so it does not stack with this timeout — enabling retries would let semaphore hold time accumulate as timeout × retry count.
+
+**Process-wide concurrency semaphore:** `getSemaphore("embedding", EMBEDDING_CONCURRENCY, EMBEDDING_SEM_WAIT_MS)` (`lib/llm/util/semaphore.js`) caps concurrent calls (6 slots by default, FIFO wait queue). When acquiring a slot exceeds `EMBEDDING_SEM_WAIT_MS` (default 3000ms), the call is rejected and `recordEmbeddingSemaphoreWaitExceeded()` increments the `mcp_embedding_semaphore_wait_exceeded_total` counter. This prevents embedding service latency from propagating into the process-wide request queue.
+
+Call order is `acquire() → embeddings.create(with timeout) → release()`, with `release()` guaranteed in a `finally` block.
+
+---
+
 ## Reranker (Cross-Encoder Reranking)
 
 After RRF merging, the top 30 candidates are reranked by a cross-encoder for higher precision. `preloadReranker()` is called asynchronously at server startup to prepare the model before the first recall request.
 
 **Dual mode:**
-- `RERANKER_URL` set: external HTTP service (`POST /rerank { query, documents[] } → { scores[] }`)
+- `RERANKER_URL` set: external HTTP service. Requests are sent as `POST /rerank { query, texts[], documents[] }` with both fields included; responses may be either `{ scores[] }` or the TEI (text-embeddings-inference) style `[{ index, score }]` array. `/health` only checks the status code, so an empty body (TEI) is accepted.
 - Not set: `@huggingface/transformers` + ONNX in-process
 
 **In-Process Model Selection (`RERANKER_MODEL`):**
@@ -275,9 +291,24 @@ After RRF merging, the top 30 candidates are reranked by a cross-encoder for hig
 
 > **Non-English users are strongly recommended to use `RERANKER_MODEL=bge-m3`.** ms-marco-MiniLM-L-6-v2 was fine-tuned exclusively on the English MS MARCO dataset and cannot reliably rank non-English query-document pairs. bge-m3 operates via the same ONNX in-process mechanism and downloads automatically from HuggingFace Hub on first run.
 
-**Automatic external-to-inprocess fallback:** After 3 consecutive failures, switches to in-process mode permanently until server restart. In either mode, if scores cannot be retrieved, the original RRF result is returned unchanged (graceful degradation).
+**Policy after external failures (`RERANKER_EXTERNAL_FALLBACK`):** After 3 consecutive failures, one of two policies applies.
+- `skip` (default): does not switch to in-process; external calls are simply skipped for `RERANKER_EXTERNAL_COOLDOWN_MS` (default 60s), and `rerank()` returns the RRF original order (candidates) unchanged. This avoids shifting the bottleneck onto the CPU-heavy in-process model during a traffic burst. After the cooldown expires, the next recall retries the external call once; success resumes normal operation, failure re-enters cooldown.
+- `inprocess` (opt-in, the previous default behavior): switches to in-process ONNX mode. Stays in-process until server restart even after the external service recovers.
+
+In either mode, if scores cannot be retrieved, the original RRF result is returned unchanged (graceful degradation).
 
 **Final score:** `sigmoid(logit) * recency_boost`. recency_boost uses 365-day linear decay in the [0.9, 1.1] range.
+
+---
+
+## QuotaChecker (Fragment Quota Check) Cache-First Path
+
+`QuotaChecker.check(keyId)` judges in two tiers on remember() entry.
+
+1. **Tier 1 — cache judgment (no lock):** looks up current usage via `getUsage(keyId)` (10-second TTL in-memory cache). If `limit === null` (unlimited), passes immediately. If `remaining` is greater than `QUOTA_NEAR_LIMIT_MARGIN` (default 10), it increments the `mcp_quota_cache_pass_total` counter via `recordQuotaCachePass()` and passes with no transaction.
+2. **Tier 2 — precise check (only near the limit):** if `remaining` is at or below the margin, falls through to the existing transaction path that locks the row with `SELECT … FOR UPDATE` and re-verifies the COUNT. On overflow, it rolls back and throws `fragment_limit_exceeded`. On success, it calls `invalidateUsageCache(keyId)` right after COMMIT — this prevents the next check from reusing a stale count now that one more fragment is about to be inserted, forcing the next call to re-fetch the latest COUNT.
+
+Most requests, being far from their limit, are processed without a FOR UPDATE lock, reducing remember() contention; the lock is taken only in the near-limit range where accuracy matters.
 
 ---
 
@@ -289,7 +320,7 @@ Runs asynchronously in the `MemoryManager._autoLinkOnRemember()` chain on every 
 
 **API key isolation:** `options.keyId` is forwarded as `key_id = ANY($n)` in the SQL query so that fragments owned by other API keys are never linked. Key scope SQL conditions are generated by the shared helper `keyScopeClause(params, column, { keyId, groupKeyIds })` in `lib/memory/keyScope.js`. GraphLinker, FragmentSearch, `getById`, `findCaseIdBySessionTopic`, `findErrorFragmentsBySessionTopic`, and all other paths requiring key filtering are unified through this helper.
 
-`fragment_links.weight` was changed from integer to real in migration-023 to support float weights.
+`fragment_links.weight` is a real-typed column supporting float weights (migration-023).
 
 ---
 
@@ -353,7 +384,7 @@ Collected via OR of these two conditions:
 
 ## ReconsolidationEngine (Dynamic Link Updates)
 
-`lib/memory/ReconsolidationEngine.js` dynamically updates the weight and confidence of fragment_links and records change history in the link_reconsolidations table.
+`lib/memory/link/ReconsolidationEngine.js` dynamically updates the weight and confidence of fragment_links and records change history in the link_reconsolidations table.
 
 **reconsolidate(linkId, action, opts) — 5 actions:**
 
@@ -377,14 +408,14 @@ Weight is clamped to [0, 2]; confidence is clamped to [0, 1].
 
 ## EpisodeContinuityService (Episode Continuity)
 
-`lib/memory/EpisodeContinuityService.js` inserts a case_events milestone on reflect() calls and connects it to the previous episode via a preceded_by edge.
+`lib/memory/processors/EpisodeContinuityService.js` inserts a case_events milestone on reflect() calls and connects it to the previous episode via a preceded_by edge.
 
 **linkEpisodeMilestone(episodeFragmentId, agentId, keyId, sessionId):**
 
 1. Queries the first 200 characters of the fragment as summary
 2. Inserts a milestone_reached event into case_events (ON CONFLICT idempotency_key DO NOTHING — deduplication)
 3. If the in-memory cache holds the previous milestone eventId for the same agentId, inserts a preceded_by edge
-4. Stores the current eventId in the lastEventByAgent Map
+4. Stores the current eventId in the lastEventByAgent Map (insertion-order LRU, capped at `MAX_TRACKED_AGENTS=1000`. Re-insertion refreshes an entry's position; the oldest entry is evicted once the cap is exceeded)
 
 **idempotency_key format:** `milestone:{agentId}:{sessionId}:{fragmentId}` — prevents duplicate events on server restart.
 
@@ -394,7 +425,7 @@ Called fire-and-forget after MemoryManager.reflect() completes. Failures do not 
 
 ## SpreadingActivation (Spreading Activation)
 
-`lib/memory/SpreadingActivation.js` proactively activates relevant fragments from the current conversation context (contextText). Based on the ACT-R Spreading Activation model.
+`lib/memory/signals/SpreadingActivation.js` proactively activates relevant fragments from the current conversation context (contextText). Based on the ACT-R Spreading Activation model.
 
 **activateByContext(contextText, agentId, keyId, sessionId):**
 
@@ -428,7 +459,7 @@ Temporal axis (valid_from/valid_to, superseded_by) preserves existing data
 
 - **Cost efficiency**: 99% of candidates handled by NLI; LLM calls occur only for numerical/domain contradictions
 - **Zero data loss**: Temporal columns manage versioning instead of deleting fragments
-- **Implementation files**: `lib/memory/NLIClassifier.js`, `lib/memory/MemoryConsolidator.js`
+- **Implementation files**: `lib/memory/signals/NLIClassifier.js`, `lib/memory/consolidate/MemoryConsolidator.js`
 - **Environment variable**: When `NLI_SERVICE_URL` is unset, ONNX in-process is used automatically (~280MB, downloaded on first run)
 
 ---
@@ -540,20 +571,20 @@ At the `insert` entry point, a `fragment.key_id !== ctx.keyId` mismatch is check
 
 ### RememberPostProcessor 8-Stage Pipeline and _extractSymbolicClaims Invocation Path
 
-The `run()` method in `lib/memory/RememberPostProcessor.js` executes 8 stages sequentially. Stage 8 is Symbolic claim extraction, proceeding as `this._symbolicClaimPromise = this._extractSymbolicClaims(...).catch(...)` fire-and-forget. It does not block the main pipeline; failures do not affect memory storage.
+The `run()` method in `lib/memory/write/RememberPostProcessor.js` executes 8 stages sequentially. Stage 8 is Symbolic claim extraction, proceeding as `this._symbolicClaimPromise = this._extractSymbolicClaims(...).catch(...)` fire-and-forget. It does not block the main pipeline; failures do not affect memory storage.
 
 `_extractSymbolicClaims(fragment, { agentId, keyId })`: `SYMBOLIC_CONFIG.enabled && SYMBOLIC_CONFIG.claimExtraction` guard → `ClaimExtractor.extract` → `ClaimStore.insert`. TENANT_ISOLATION_VIOLATION exceptions call `symbolicMetrics.recordGateBlock("claim_extraction", "tenant_violation")` and are then swallowed. On successful claim, `symbolicMetrics.recordClaim(extractor, polarity)` is called.
 
 ### FragmentSearch Hook Chain Insertion Points
 
-Three hooks execute in order after line 88 in `lib/memory/read/FragmentSearch.js` (the `lib/memory/FragmentSearch.js` stub re-exports from this path):
+Three hooks execute in order after line 88 in `lib/memory/read/FragmentSearch.js`:
 1. **shadow hook** (line 99): `SYMBOLIC_CONFIG.enabled && SYMBOLIC_CONFIG.shadow` → records `symbolicMetrics.observeLatency("shadow_recall", ...)` only
 2. **explain hook** (line 107): `SYMBOLIC_CONFIG.enabled && SYMBOLIC_CONFIG.explain` → `explanationBuilder.annotate(clean, { searchPath, layerLatency, query, caseContext })`
 3. **cbr filter** (line 124): `SYMBOLIC_CONFIG.enabled && SYMBOLIC_CONFIG.cbrFilter && sq.caseId` → `cbrEligibility.filter(clean, sq)`. Pre-filter `rawResultCount` is preserved separately to protect the SearchParamAdaptor learning signal.
 
 ### ConflictResolver.checkAssertionConsistency and validationWarnings Addition
 
-`checkAssertionConsistency` in `lib/memory/ConflictResolver.js` preserves the existing Jaccard pipeline (`JACCARD_THRESHOLD=0.3`, up to 10 fragments within a 7-day window) while appending symbolic polarity conflict results alongside it. Within the `SYMBOLIC_CONFIG.enabled && SYMBOLIC_CONFIG.polarityConflict` guard, `ClaimConflictDetector.detectPolarityConflicts` is called; exceptions are logged with logWarn and swallowed. `conflictWith` IDs found in polarity conflicts are merged into the existing `supersedeCandidates`. The return type is extended to a 3-tuple `{ assertionStatus, supersedeCandidates, validationWarnings }`, returning `validationWarnings: []` as an empty array when the flag is off.
+`checkAssertionConsistency` in `lib/memory/write/ConflictResolver.js` runs the Jaccard pipeline (`JACCARD_THRESHOLD=0.3`, up to 10 fragments within a 7-day window) together with a symbolic polarity conflict check. Within the `SYMBOLIC_CONFIG.enabled && SYMBOLIC_CONFIG.polarityConflict` guard, `ClaimConflictDetector.detectPolarityConflicts` is called; exceptions are logged with logWarn and swallowed. `conflictWith` IDs found in polarity conflicts are merged into `supersedeCandidates`. The return type is a 3-tuple `{ assertionStatus, supersedeCandidates, validationWarnings }`, returning `validationWarnings: []` as an empty array when the flag is off.
 
 ---
 
@@ -592,7 +623,7 @@ When assembling the `get_skill_guide` response, `getSkillGuideOverride(presetNam
 
 ## RecallSuggestionEngine Internals
 
-`lib/memory/RecallSuggestionEngine.js`. Called after `MemoryManager.recall()` completes in a fail-open manner. On exception, returns null so the recall response itself is unaffected.
+`lib/memory/read/RecallSuggestionEngine.js`. Called after `MemoryManager.recall()` completes in a fail-open manner. On exception, returns null so the recall response itself is unaffected.
 
 The engine injects a `_suggestion` field into the recall response as a non-invasive hint. Four rules are evaluated in priority order; the first match returns immediately (no duplicate suggestions).
 
@@ -681,6 +712,10 @@ const output = await this._pipeline(text, { pooling: "mean", normalize: true });
 
 `pooling: "mean"` averages token vectors; `normalize: true` applies L2 normalization. The result is passed through `normalizeL2()` again to correct floating-point drift.
 
+**Init in-flight deduplication and inference serialization:** Overlapping `init()` calls share the same `_initPromise`, preventing duplicate pipeline loads. Because the ONNX pipeline is a single instance, `_enqueue(job)` serializes `embed`/`embedBatch` calls into a FIFO chain. A failing job does not break the chain; the caller still receives the original result.
+
+**embedBatch batch inference:** `embedBatch(texts)` passes an array of inputs to the pipeline in a single inference call. If the output supports `tolist()`, it is used to split per-text vectors; otherwise `_chunkFlat` falls back to evenly slicing the flat array by text count. `generateBatchEmbeddings` in `lib/tools/embedding.js` calls this `embedBatch` in `batchSize` chunks when the transformers provider is active.
+
 **Shared runtime with Reranker/NLIClassifier:** All three modules use `@huggingface/transformers` but load different pipeline tasks (`feature-extraction` / `text-ranking` / `zero-shot-classification`). The ONNX Runtime instance is shared within the process, so additional memory overhead is minimal.
 
 **Memory budget reference:**
@@ -702,7 +737,7 @@ const output = await this._pipeline(text, { pooling: "mean", normalize: true });
 | Value | Adapter | Status |
 |-|-|-|
 | `pgvector` (default) | `PgVectorStore` | Production |
-| `sqlite-vec` | `SqliteVecStore` | Planned for v4.1, currently stub |
+| `sqlite-vec` | `SqliteVecStore` | Unimplemented stub |
 
 All adapters implement a common interface of 5 methods + 2 properties.
 

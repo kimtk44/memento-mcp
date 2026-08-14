@@ -1,13 +1,13 @@
 <p align="center">
-  <img src="assets/images/memento_mcp_logo_transparent.png" width="400" alt="Memento MCP Logo">
+  <img src="assets/images/anchormind_logo.png" width="400" alt="AnchorMind Logo">
 </p>
 
 <p align="center">
-  <a href="https://github.com/JinHo-von-Choi/memento-mcp/releases">
-    <img src="https://img.shields.io/github/v/release/JinHo-von-Choi/memento-mcp?style=flat&label=release&color=4c8bf5" alt="GitHub Release" />
+  <a href="https://github.com/JinHo-von-Choi/anchormind/releases">
+    <img src="https://img.shields.io/github/v/release/JinHo-von-Choi/anchormind?style=flat&label=release&color=4c8bf5" alt="GitHub Release" />
   </a>
-  <a href="https://github.com/JinHo-von-Choi/memento-mcp/stargazers">
-    <img src="https://img.shields.io/github/stars/JinHo-von-Choi/memento-mcp?style=flat&color=f5c542" alt="GitHub Stars" />
+  <a href="https://github.com/JinHo-von-Choi/anchormind/stargazers">
+    <img src="https://img.shields.io/github/stars/JinHo-von-Choi/anchormind?style=flat&color=f5c542" alt="GitHub Stars" />
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat" alt="License" />
@@ -21,20 +21,22 @@
   <a href="README.md">📖 한국어 문서</a>
 </p>
 
-# Memento MCP
+# AnchorMind
 
 > Give your AI a memory. Then let it use that memory as a foundation to grow.
 
-Imagine a new employee whose memory resets every morning. Everything you taught yesterday, every problem you solved together last week, every preference -- all forgotten. Memento MCP gives this new hire a memory.
+Imagine a new employee whose memory resets every morning. Everything you taught yesterday, every problem you solved together last week, every preference -- all forgotten. AnchorMind gives this new hire a memory.
 
-Memento MCP is a long-term memory server for AI agents, built on MCP (Model Context Protocol). It persists important facts, decisions, error patterns, and procedures across sessions and restores them in the next.
+AnchorMind is a long-term memory server for AI agents, built on MCP (Model Context Protocol). It persists important facts, decisions, error patterns, and procedures across sessions and restores them in the next.
+
+> This project started out as memento-mcp — a name that still fits a memory system well, but one shared by too many similar projects. It is now AnchorMind: memories worth keeping are anchored in place so they don't drift away with the session, echoing the anchor fragments at the core of this system.
 
 This is not a library of memories. As feedback accumulates, connections strengthen. As experiences repeat, patterns abstract. As sessions continue, context becomes narrative. The goal is not an AI that remembers — it is an AI that grows from experience.
 
 > [!TIP]
 > If installing and configuring the server yourself feels daunting, hand a single sentence to an AI assistant (Claude Code, Cursor, Codex):
 >
-> > "Install the memento-mcp repository in my environment, read `docs/INSTALL.en.md` and `SKILL.md`, apply the recommended settings, then verify it works."
+> > "Install the anchormind repository in my environment, read `docs/INSTALL.en.md` and `SKILL.md`, apply the recommended settings, then verify it works."
 >
 > The assistant will walk you through dependency setup, `.env` configuration, MCP registration, and the health check. Detailed delegation flow lives in [`docs/INSTALL.en.md`](docs/INSTALL.en.md#delegate-to-an-ai-assistant).
 
@@ -125,7 +127,7 @@ Some MCP clients such as Codex Desktop use deferred/lazy tool discovery. tool_se
 
 ## Compatible Platforms
 
-Memento is a standard MCP (Model Context Protocol) server. It works with any AI platform that supports MCP — not just Claude Code.
+AnchorMind is a standard MCP (Model Context Protocol) server. It works with any AI platform that supports MCP — not just Claude Code.
 
 | Platform | Config Location | Transport |
 |----------|----------------|-----------|
@@ -141,7 +143,7 @@ Memento is a standard MCP (Model Context Protocol) server. It works with any AI 
 
 Common setup: Server URL `http://localhost:57332/mcp`, Authorization header `Bearer YOUR_ACCESS_KEY`.
 
-For Claude.ai Web and ChatGPT, Memento uses OAuth. Enter your API key (`mmcp_xxx`) as the `client_id` -- no Dynamic Client Registration (RFC 7591) flow required. Redirect URIs from trusted domains (claude.ai, chatgpt.com) are auto-approved.
+For Claude.ai Web and ChatGPT, AnchorMind uses OAuth. Enter your API key (`mmcp_xxx`) as the `client_id` -- no Dynamic Client Registration (RFC 7591) flow required. Redirect URIs from trusted domains (claude.ai, chatgpt.com) are auto-approved.
 
 See [integration guides](docs/getting-started/) for platform-specific setup.
 
@@ -161,27 +163,30 @@ See [integration guides](docs/getting-started/) for platform-specific setup.
 
 | Feature | Description |
 |---------|-------------|
-| `remember` | Decomposes important information into atomic fragments and stores them |
-| `recall` | Returns relevant memories via keyword + semantic 3-tier search |
+| `remember` | Decomposes important information into atomic fragments and stores them. With `MEMENTO_REMEMBER_ATOMIC=true`, the quota check and the INSERT run as a single atomic transaction. |
+| `recall` | Returns only relevant memories via keyword + semantic 3-tier search. `SearchScope` consistently applies workspace/caseId/affect and other scope filters across all L1-L3 layers. |
 | `context` | Automatically restores key context at session start |
 | Auto-cleanup | Duplicate merging, contradiction detection, importance decay, TTL-based forgetting |
+| Storage adapter layer | `lib/storage/` holds the storage abstraction. The `getStorage()` factory returns `PgVectorStore` (default) or `SqliteVecStore` (stub, not yet implemented) based on the `MEMENTO_STORAGE` environment variable. |
 | **Link Reconsolidation** | `tool_feedback` signals update fragment_links weight/confidence in real time (ReconsolidationEngine). Contradicting links are automatically quarantined. |
 | **Spreading Activation** | Passing `contextText` to `recall` pre-boosts activation_score for contextually related fragments, surfacing more relevant results (SpreadingActivation). |
 | **Episode Continuity** | After `reflect`, `preceded_by` edges are automatically created between episode fragments to preserve the flow of experience as a graph (EpisodeContinuityService). |
 | Admin Console | Memory explorer, knowledge graph, statistics dashboard, API key group/status filters, inline daily-limit editing |
-| OAuth Integration | RFC 7591 Dynamic Client Registration, Claude.ai Web and ChatGPT integration support |
-| **Workspace isolation** | Partition memories by project, role, or client within the same API key. Auto-tag via `api_keys.default_workspace`, auto-filter on recall. |
-| **Batch async mode** | `batch_remember` persists fragments via multi-row INSERT and offloads embedding and post-processing to a non-blocking async worker (BatchRememberWorker). With `async: true`, the worker guarantees at-least-once delivery via ack, retry (up to 3), dead-letter, and startup recovery (RPOPLPUSH reliable queue). Use `batch_status(jobId)` to query job state (queued/processing/completed/dead). Always returns a standard single JSON-RPC response (`stream` param deprecated). |
+| OAuth Integration | RFC 7591 Dynamic Client Registration, Claude.ai Web and ChatGPT integration support. The access token binds to a stable session ID through a keyId-namespaced Redis reverse index, so a reconnecting client keeps its existing session instead of starting a new one. |
+| **Workspace isolation** | Partitions memories by project, role, or client within the same API key. Auto-tags via `api_keys.default_workspace`, auto-filters on recall. |
+| **Batch processing** | `batch_remember` persists fragments through a single multi-row INSERT (256KB or 500-row chunks) and offloads embedding and post-processing to a non-blocking async worker (BatchRememberWorker). With `async: true`, the worker guarantees at-least-once delivery via ack, retry (up to 3), dead-letter, and startup recovery (RPOPLPUSH reliable queue). Use `batch_status(jobId)` to query job state (queued/processing/completed/dead). Always returns a standard single JSON-RPC response (`stream` deprecated). `reflect` delegates its 5 categories through a single batch call. EmbeddingWorker processes queued batches via generateBatchEmbeddings and a multi-row UPDATE. |
+| Consistency Gate | The `fragments.morpheme_indexed` column tracks whether morpheme indexing has completed. Fragments not yet indexed are automatically excluded from the L3 morpheme search path. |
+| Mode preset | `recall-only` / `write-only` / `onboarding` / `audit` JSON presets. The `X-Memento-Mode` header or `api_keys.default_mode` restricts which tools are exposed. |
+| Affective tagging | `fragments.affect` column (neutral / frustration / confidence / surprise / doubt / satisfaction). Filter remember / recall results by emotional label. |
+| Recall suggestions | `recall` responses carry a `_meta.suggestion` field that flags repeat queries, empty results with no context, oversized limits with no budget, and noisy untyped queries — a non-invasive hint clients are free to ignore. |
+| Local embedding | `EMBEDDING_PROVIDER=transformers` runs `@huggingface/transformers` pipeline-based embeddings without an external API call (`Xenova/multilingual-e5-small`, 384d by default). |
+| Migration lint | `npm run lint:migrations` checks new migration files for numbering conflicts and convention violations before commit. |
 
-### What's New in v3.0.0 — CLI/API Enhancement Phase 2 (folded from v2.12.0)
+See [SKILL.md](SKILL.md) for the full list of MCP tools.
 
-Remote CLI, X-RateLimit headers, dryRun, _meta wrapper, sparse fields, and idempotency.
+## CLI
 
-- Remote CLI: `--remote URL --key KEY` global flags let you operate a remote Memento server without a local instance. `MEMENTO_CLI_REMOTE` / `MEMENTO_CLI_KEY` environment variables are also supported.
-- X-RateLimit headers: All API responses include `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Resource` headers. Headers are omitted for master key or when limit is null. A 10-second module-level TTL cache minimizes DB lookups.
-- dryRun parameter: remember / link / forget / amend now accept `dryRun: true`. Returns the simulated result without any DB side effects. Defaults to false.
-
-CLI examples:
+Operate a remote MCP server directly without a local instance, using the `--remote URL --key KEY` global flags or the `MEMENTO_CLI_REMOTE` / `MEMENTO_CLI_KEY` environment variables.
 
 ```bash
 # Remote recall via environment variable
@@ -193,36 +198,25 @@ memento-mcp recall "query" --remote https://memento.anchormind.net/mcp --key mmc
 # Table output, limit 5
 memento-mcp recall "query" --format table --limit 5
 
-# Prevent duplicate storage with idempotency key
+# Prevent duplicate storage with an idempotency key
 memento-mcp remember "content" --topic project --idempotency-key k1
 ```
 
-### What's New in v3.0.0 — CLI/API Enhancement Phase 1 (folded from v2.11.0)
+`--format table|json|csv` selects the output format; all 14 subcommands support `--help` / `-h`. See [docs/cli.md](docs/cli.md) for the full flag reference.
 
-H group: _meta wrapper, sparse fields, CLI improvements, and idempotency.
+## API Response Meta
 
-- _meta wrapper: recall / context responses now include a `_meta: { searchEventId, hints, suggestion }` field. The existing top-level `_searchEventId` / `_memento_hint` / `_suggestion` fields are deprecated and will be removed in v3.1.0. Use `_meta.*` instead.
-- sparse fields: Pass a `fields` array to recall to restrict the returned fields. Whitelist of 17: id / content / type / topic / keywords / importance / created_at / access_count / confidence / linked / explanations / workspace / context_summary / case_id / valid_to / affect / ema_activation.
-- CLI `--format`: `--format table|json|csv` flag controls output format. Defaults to table in TTY environments and json when piped. `--json` is an alias for `--format json`.
-- CLI `--help`: All 14 subcommands support `--help` / `-h`.
-- idempotencyKey: remember / batchRemember accept an `idempotencyKey` parameter (max 128 chars) to prevent duplicate storage within the same key_id scope. migration-034-v2.16.0-bundle adds the `fragments.idempotency_key` column.
-
-### What's New in v3.0.0 — Admin Metrics Dashboard (folded from v2.16.0)
-
-- Admin Console metrics tab: 8 Prometheus cards (Active Sessions / Auth Denied / RBAC Denied / Tenant Blocked / RPC p50/p99 / Tool Errors / Symbolic Gate Blocked / OAuth Tokens) + per-tool call statistics table + error type distribution table. Left sidebar expands from 7 to 8 menus.
-- `/v1/internal/model/nothing/metrics-summary` endpoint (master/admin only): derived directly from the prom-client Registry, 10-second response cache TTL, `?windowSec=N` supported.
-- Phase 2: timeseries ring buffer + SVG sparkline rendered by browser-native ESM with no external chart library.
-- Test cleanup hang resolved at the root: removed the 14-second residual "Promise resolution pending" from node:test runner (SSE heartbeat `.unref()`, lifecycle regression guards).
-
-_meta structure example:
+`recall` / `context` responses include a `_meta: { searchEventId, hints, suggestion, serverTime }` field. `serverTime` exposes the server's current time on every response to counter LLM clients anchoring to their training cutoff.
 
 ```json
 {
   "fragments": [...],
   "_meta": {
-    "searchEventId": "evt-abc123",
-    "hints": { "signal": "consider_context" },
-    "suggestion": { "code": "large_limit_no_budget", "message": "..." },
+    "searchEventId": 1234,
+    "hints": [
+      { "signal": "consider_context", "suggestion": "...", "trigger": "recall" }
+    ],
+    "suggestion": { "code": "empty_result_no_context", "message": "..." },
     "serverTime": {
       "iso"        : "2026-05-15T06:32:11.000Z",
       "epoch_ms"   : 1747291931000,
@@ -233,57 +227,40 @@ _meta structure example:
 }
 ```
 
-`serverTime`: Server time of the response, mitigating LLM clients' training-time fixation. Included consistently in all recall/context responses. Four fields: `iso` (UTC ISO 8601), `epoch_ms` (Unix ms), `display_kst` (Asia/Seoul formatted), `timezone`.
+Successful `remember` / `amend` / `forget` responses carry a `feedback_sampled` signal in `_meta.hints` with a fixed probability. Pass the hint's `args` straight into `tool_feedback` to rate the result (disable with `MEMENTO_FEEDBACK_SAMPLING=false`).
 
-Deprecation notice: v3.0.0 mirrors the top-level `_searchEventId` / `_memento_hint` / `_suggestion` fields to `_meta.*`. The top-level fields will be removed in v3.1.0. Migrate to `_meta.searchEventId` / `_meta.hints` / `_meta.suggestion`.
+`remember` / `link` / `forget` / `amend` accept a `dryRun: true` parameter that returns the expected result with no side effects. All responses carry `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Resource` headers, omitted for the master key or when limit is null. `recall` accepts a `fields` array that restricts the returned fields to a whitelist of 17. `remember` / `batchRemember` accept an `idempotencyKey` parameter (max 128 chars) that prevents duplicate storage within the same key_id scope. `content` on `remember`, `batchRemember` items, and `amend` is rejected with a JSON-RPC -32602 error once it exceeds 4000 characters — a reception-side gate ahead of the per-type storage truncation (1000/300 chars) described above; `batchRemember` fails only the offending item and continues processing the rest of the batch.
 
-### What's New in v3.0.0 — MemoryManager decomposition (folded from v2.10.0)
+## Security
 
-Phase 5-B internal decomposition. No changes to the public API.
+- RBAC default-deny: Any tool name absent from the `TOOL_PERMISSIONS` map is rejected immediately regardless of permissions.
+- Tenant isolation: forget / amend / link / fragment_history enforce SQL-level `key_id` conditions that prevent cross-tenant fragment access. "Not found" and "not authorized" return the same message to avoid existence disclosure.
+- injectSessionContext: Client-supplied internal fields (`_keyId` / `_permissions`, etc.) are stripped and re-injected from the server-side authentication result, so session context cannot be forged.
+- Admin rate limit: IP-based rate limits apply to `/auth`, `/keys` POST, and `/import` POST.
+- OpenAPI: `GET /openapi.json` endpoint (`ENABLE_OPENAPI=true`). The master key receives the full spec; an API key receives a permissions-filtered spec.
 
-- MemoryManager reduced from 1252 to 259 lines as a facade. Business logic was moved into 4 classes under `lib/memory/processors/`:
-  - MemoryRememberer: remember / batchRemember
-  - MemoryRecaller: recall / context
-  - MemoryReflector: reflect
-  - MemoryLinker: link / graph_explore
-- Shared property synchronization: facade and processors sync shared setters via the `_installSharedSync` pattern.
+## Symbolic Verification Layer
 
-### What's New in v3.0.0 — Mode preset / Affect / Local Embedding (folded from v2.9.0)
+Optional explainability, advisory link integrity, polarity conflict detection, and policy-rule soft gating. 9 core modules plus 5 rule files. All flags are off by default.
 
-- **Mode presets**: Four JSON presets — recall-only, write-only, onboarding, audit. Activate via `X-Memento-Mode` header or `api_keys.default_mode` DB column to constrain which tools are exposed per session. Enables role-based access control without any code changes.
-- **RecallSuggestionEngine**: Non-invasive `_suggestion` meta field appended to recall responses. Detects four patterns — repeat queries, empty results with no context, oversized limit with no budget, and noisy untyped queries — and surfaces improvement hints. Clients that ignore the field see no behavior change.
-- **Affective tagging**: `fragments.affect` column with six enums: neutral, frustration, confidence, surprise, doubt, satisfaction. Expose the `affect` parameter in remember / recall to filter by emotional label. Useful for distinguishing recurring error patterns from high-confidence decisions.
-- **CLI LLM provider chain**: Gemini CLI, Codex CLI, and GitHub Copilot CLI can now be specified in `LLM_PRIMARY` / `LLM_FALLBACKS`. Morpheme analysis, auto-reflect, and contradiction escalation run through local CLI binaries with no external API cost.
-- **Local transformers.js embedding**: Set `EMBEDDING_PROVIDER=transformers` to use `@huggingface/transformers` pipeline-based embeddings without an OpenAI API key. Defaults to `Xenova/multilingual-e5-small` (384d). Suitable for fully local deployments.
-- **Token-based session reuse**: Resolves the issue where the claude.ai connector created a new session on every initialize after losing Mcp-Session-Id. The same access token is now bound to an existing session ID via a sha256 hash + keyId-namespaced Redis reverse index, preventing fragment loss.
+## Smart Recall
 
-### Security Hardening (v2.7.0)
+- ProactiveRecall: Automatically links similar fragments based on keyword overlap during `remember()`.
+- CaseRewardBackprop: Automatically back-propagates importance to evidence fragments on case verification events.
+- SearchParamAdaptor: Automatically optimizes search thresholds based on usage patterns.
+- CBR (Case-Based Reasoning): `recall(caseMode=true)` retrieves goal → events → outcome flows from similar cases, enabling reuse of past resolution patterns.
+- depth filter: Controls recall depth per Planner/Executor role (`"high-level"` / `"detail"` / `"tool-level"`).
+- recall response `key_id`: Each returned fragment carries the owning tenant's identifier.
+- Reconsolidation: `tool_feedback` signals update `fragment_links` weight/confidence in real time (`ENABLE_RECONSOLIDATION=true`).
+- Spreading Activation: Passing `recall(contextText=...)` pre-activates `ema_activation` for contextually related fragments based on conversation context (`ENABLE_SPREADING_ACTIVATION=true`).
 
-- **RBAC default-deny**: Any tool name not present in the `TOOL_PERMISSIONS` map is immediately rejected regardless of permissions.
-- **Tenant isolation hardening**: forget/amend/link/fragment_history enforce SQL-level `key_id` conditions preventing cross-tenant fragment access. "Not found" and "not authorized" return the same message to prevent existence disclosure.
-- **injectSessionContext**: Client-supplied internal fields (`_keyId`/`_permissions`, etc.) are stripped and re-injected from server-side authentication results. Session context forgery is impossible.
-- **Admin rate limit**: IP-based rate limits applied to `/auth`, `/keys` POST, and `/import` POST endpoints.
-- **OpenAPI**: `GET /openapi.json` endpoint added (`ENABLE_OPENAPI=true`). Master key receives the full spec; API keys receive a permissions-filtered spec.
+`fragments.id` uses the `frag-{16-char hex}` text format. It is not a UUID — take care when generating or parsing IDs externally.
 
-### Symbolic Verification Layer (v2.8.0)
-
-- **Symbolic Verification Layer (v2.8.0)**: Optional explainability, advisory link integrity, polarity conflict detection, policy rules soft gating. 9 core modules + 5 rule files. All flags off by default for full v2.7.0 backwards compatibility.
-
-### Smart Recall (v2.7.0)
-- **ProactiveRecall**: Automatically links similar fragments based on keyword overlap during remember()
-- **CaseRewardBackprop**: Automatically back-propagates importance to evidence fragments on case verification events
-- **SearchParamAdaptor**: Automatically optimizes search thresholds based on usage patterns
-- **CBR (Case-Based Reasoning)**: `recall(caseMode=true)` retrieves goal->events->outcome flows from similar cases, enabling reuse of past resolution patterns
-- **depth filter**: Controls recall depth per Planner/Executor role (`"high-level"` | `"detail"` | `"tool-level"`)
-- **recall response key_id**: Each returned fragment includes a `key_id` field for tenant identification
-- **Reconsolidation**: Real-time strengthening or weakening of fragment_links weight/confidence based on `tool_feedback` signals (`ENABLE_RECONSOLIDATION=true`)
-- **Spreading Activation**: Passing `recall(contextText=...)` pre-boosts ema_activation for contextually related fragments based on conversation context (`ENABLE_SPREADING_ACTIVATION=true`)
-
-See [SKILL.md](SKILL.md) for the full list of MCP tools.
+The `/metrics` endpoint exposes Prometheus-compatible metrics. Collection and visualization are left to the operator.
 
 ## Memory vs Rules
 
-Memory fragments injected by Memento have lower priority than the system prompt. Factual memories like "we use PostgreSQL 15" work well, but behavioral rules like "always use Given-When-Then pattern in tests" may be ignored when they conflict with the system prompt.
+Memory fragments injected by AnchorMind have lower priority than the system prompt. Factual memories like "we use PostgreSQL 15" work well, but behavioral rules like "always use Given-When-Then pattern in tests" may be ignored when they conflict with the system prompt.
 
 For behavioral rules, use higher-priority channels such as CLAUDE.md, AGENTS.md, hooks, or skills.
 
@@ -303,11 +280,11 @@ See [Benchmark Report](docs/benchmark.en.md) for the full analysis.
 
 ## Usage Patterns
 
-Memento is optimized for fact caching. When narrative context matters:
+AnchorMind is optimized for fact caching. When narrative context matters:
 
 - Use the `episode` type to store narratives that preserve "why" behind decisions
 - Add `contextSummary` when storing facts to get context alongside recall results
-- A dual-memory setup works well: fact retrieval via Memento, context restoration via your main memory system (e.g., MEMORY.md)
+- A dual-memory setup works well: fact retrieval via AnchorMind, context restoration via your main memory system (e.g., MEMORY.md)
 
 ## Who Is This For
 
@@ -328,7 +305,7 @@ Memento is optimized for fact caching. When narrative context matters:
 | [Benchmark](docs/benchmark.en.md) | Full LongMemEval-S benchmark analysis |
 | [SKILL.md](SKILL.md) | Full MCP tool reference |
 | [INSTALL.md](docs/INSTALL.en.md) | Migrations, hook setup, detailed installation |
-| [CHANGELOG](CHANGELOG.md) | Version history, v3.0.0 umbrella release notes, and Pre-3.0.0 incremental build ledger |
+| [CHANGELOG](CHANGELOG.md) | Version history |
 
 ## Operations
 
@@ -377,7 +354,7 @@ Working with AI in production, I kept wasting time re-explaining the same contex
 
 The biggest problem was the endless repetition. Having to re-state things I had already explained, re-confirm settings that were already in place. I would painstakingly correct the AI, get it working perfectly -- only to start a new session and face the exact same issues all over again. It felt like being the training supervisor for a brilliant new hire who graduated top of their class but has their memory wiped clean every morning.
 
-"Do you remember Mijeong?" -- without a cue, nothing comes to mind. But say "your desk mate from first grade" and suddenly you remember her lending you an eraser. AI works the same way. The bug you fixed yesterday, the decision you made last week, your preferred coding style. Instead of resetting every session, Memento remembers for you.
+"Do you remember Mijeong?" -- without a cue, nothing comes to mind. But say "your desk mate from first grade" and suddenly you remember her lending you an eraser. AI works the same way. The bug you fixed yesterday, the decision you made last week, your preferred coding style. Instead of resetting every session, AnchorMind remembers for you.
 
 To solve this pain, I designed a system that decomposes memories into atomic units, searches them hierarchically, and lets them decay naturally over time. Just as humans are creatures of forgetting, this system embraces "appropriate forgetting" as a feature.
 

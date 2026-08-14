@@ -17,7 +17,7 @@ import {
     classifyQueryType,
     extractFilterKeys,
     buildSearchEvent
-} from "../../lib/memory/SearchEventRecorder.js";
+} from "../../lib/memory/signals/SearchEventRecorder.js";
 
 describe("classifyQueryType", () => {
     it("빈 객체는 keywords를 반환한다", () => {
@@ -128,6 +128,12 @@ describe("buildSearchEvent", () => {
         assert.strictEqual(event.l1_count, 5);
         assert.strictEqual(event.l2_count, 10);
         assert.strictEqual(event.l3_count, 8);
+    });
+
+    it("keywords 폴백 보조 세그먼트 L3kw:N도 l3_count로 집계된다", () => {
+        const event = buildSearchEvent({}, [], { searchPath: "L1:12 → L2:7 → L3kw:4" });
+        assert.strictEqual(event.l2_count, 7);
+        assert.strictEqual(event.l3_count, 4);
     });
 
     it("RRF 포함 경로에서 used_rrf가 true이다", () => {

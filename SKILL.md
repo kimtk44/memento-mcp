@@ -1,22 +1,23 @@
-# Memento MCP Skill Reference
+# AnchorMind Skill Reference
 
-AI 에이전트가 Memento MCP 기억 서버를 최대 효율로 활용하기 위한 기술 레퍼런스.
+AI 에이전트가 AnchorMind 기억 서버를 최대 효율로 활용하기 위한 기술 레퍼런스.
 
-## 현재 버전: v4.7.0
+## 현재 버전: v5.6.0
 
-Memento MCP 서버는 AI 에이전트의 세션 간 장기 기억을 파편(Fragment) 단위로 영속화하고, 20개 도구를 통해 저장·검색·연결·반성 기능을 제공한다.
+AnchorMind 서버는 AI 에이전트의 세션 간 장기 기억을 파편(Fragment) 단위로 영속화하고, 18개 도구를 통해 저장·검색·연결·반성 기능을 제공한다. 마스터 키 세션에서는 갱신 도구 2종(`check_update`, `apply_update`)이 추가로 노출되어 총 20개가 된다.
 
 주요 현재 기능:
 
 - `batch_remember`는 동기(기본)와 비동기(`async: true`) 두 모드를 지원한다. 비동기 모드에서는 선검증 후 Redis 큐에 적재하고 `{async, accepted, jobId}`를 즉시 반환하며, 워커가 ack·재시도(최대 3회)·dead-letter·기동 복구(RPOPLPUSH reliable queue)로 at-least-once 처리를 보장한다. `batch_status(jobId)`로 처리 상태(queued/processing/completed/dead)를 조회한다. Redis 비활성 환경에서는 자동으로 동기 모드로 폴백한다. `batch_remember`와 `memory_consolidate`는 표준 단일 JSON-RPC 응답으로 반환되며 `stream` 파라미터는 동작하지 않는다(하위 호환 유지).
-- 검색은 3계층(L1 키워드 → L2 pgvector 시맨틱 → L3 RRF 하이브리드)으로 자동 라우팅되며, `computeRecallScore` 함수가 cross-encoder reranker 결과에 topic/keyword 직접 일치 신호를 log 정규화된 가산항으로 반영한다. 시맨틱 임계값 기본값은 0.5이고, `SearchParamAdaptor`가 50회 이상 샘플 축적 후 키별·시간대별로 임계값을 자동 조정한다.
+- 검색은 3계층(L1 키워드 → L2 pgvector 시맨틱 → L3 RRF 하이브리드)으로 자동 라우팅되며, `computeRecallScore` 함수가 cross-encoder reranker 결과에 topic/keyword 직접 일치 신호를 log 정규화된 가산항으로 반영한다. 시맨틱 임계값 기본값은 0.4이고, `SearchParamAdaptor`가 50회 이상 샘플 축적 후 키별·시간대별로 임계값을 자동 조정한다.
 - 형태소 분석은 로컬 CPU 분석기(`MorphemeTokenizer`)가 담당한다. 한글 garu-ko·영어 PorterStemmer·중국어 @node-rs/jieba·일본어 kuromoji로 라우팅하며, 벤치마크 기준 1.06ms/call 수준이다. `MEMENTO_MORPHEME_TOKENIZER=llm` 설정 시에만 LLM 경로가 활성화된다.
 - 코어 도구는 MCP `title` + `annotations`(readOnlyHint/idempotentHint/openWorldHint) 메타데이터를 포함한다. Codex Desktop 등 deferred/lazy 로딩 클라이언트를 위한 재검색 가이드가 서버 initialize instructions에 포함된다.
 - recall/context/reflect 응답 `_meta`에 `serverTime { iso, epoch_ms, display_kst, timezone }` 필드가 포함되어 LLM 클라이언트가 매 응답마다 서버 현재 시각을 재확인할 수 있다.
 - `tool_reflect` 응답에 `_meta.link_suggestions[]`가 포함된다. 이 목록은 schema-fit gate를 통과하지 못해 자동 링크되지 않은 인과 관계 후보다. LLM은 후보를 검토하여 정당한 인과로 판단되는 항목만 `link(fromId, toId, relationType=...)` 도구로 명시 호출한다.
 - recall/context 응답에서 `_meta.serverTime.display_kst` 또는 `_meta.serverTime.iso`로 현재 시점을 재확인하고 파편의 `created_at`·`age_days`와 대조하여 stale 여부를 판단한다. 응답 메타에 명시된 서버 시각이 자체 추정 시각과 다르면 서버 시각이 정답이다.
+- 긴 파편 자동 분할(`splitLongFragments`)은 자식 파편에 본문 기반 keywords를 부여하므로 분할된 내용도 키워드 검색으로 회수된다. 자식 합집합이 원문의 수치 앵커(날짜·금액·비율)를 모두 담지 못하면 분할을 중단하고 원문을 그대로 유지하며, 자식이 남아 있는 원문은 GC 물리 삭제 대상에서 제외된다.
 - `lib/storage/` 어댑터 계층이 `getStorage()` 팩토리 형태로 존재하며, `MEMENTO_STORAGE` 환경변수로 storage 백엔드를 선택한다.
-- 검색 레이어는 `lib/memory/read/SearchScope.js`를 통해 `(workspace, caseId, resolutionStatus, phase, affect, keyId)` scope를 처음부터 정합 적용한다.
+- 검색 레이어는 `lib/memory/read/SearchScope.js`를 통해 `(workspace, caseId, resolutionStatus, phase, affect, type, topic, keyId)` scope를 처음부터 정합 적용한다.
 - 실제 로직은 `lib/memory/processors/` 4개 클래스(MemoryRememberer·MemoryRecaller·MemoryReflector·MemoryLinker)와 `lib/memory/` 하위 6개 서브디렉토리(`read/`, `write/`, `link/`, `consolidate/`, `embedding/`, `signals/`)로 구성된다.
 
 ### LLM 동시성 제어
@@ -60,7 +61,7 @@ recall / context 응답 메타데이터는 `_meta.searchEventId` / `_meta.hints`
 선제적 컨텍스트 사냥 예시:
 
 ```
-사용자: "Memento MCP에 새 기능 하나 추가하려고 해"
+사용자: "AnchorMind에 새 기능 하나 추가하려고 해"
 ↓
 1. recall(topic="memento-mcp", contextText="새 기능 추가 계획")
 2. recall(type="decision", topic="memento-mcp")
@@ -196,7 +197,7 @@ recall 호출
 
 #### 원격 CLI
 
-로컬 Memento 서버 없이 원격 서버에 직접 연결한다.
+로컬 AnchorMind 서버 없이 원격 서버에 직접 연결한다.
 
 ```bash
 # 환경변수 방식 (영구 설정에 적합)
@@ -263,7 +264,7 @@ top-level `_searchEventId` / `_memento_hint` / `_suggestion` mirror 필드는 �
 }
 ```
 
-화이트리스트 17개: id / content / type / topic / keywords / importance / created_at / access_count / confidence / linked / explanations / workspace / context_summary / case_id / valid_to / affect / ema_activation.
+화이트리스트 19개: id / content / type / topic / keywords / importance / created_at / access_count / confidence / linked / explanations / workspace / context_summary / case_id / valid_to / affect / ema_activation / key_id / key_name.
 
 #### idempotencyKey
 
@@ -348,7 +349,7 @@ tools/list 응답의 각 도구에 `meta` 필드가 포함된다.
 
 #### LLM Provider 체인 확장
 
-`LLM_PRIMARY` 및 `LLM_FALLBACKS`에 `codex-cli`, `copilot-cli`, `qwen-cli` 추가 지원.
+`LLM_PRIMARY` 및 `LLM_FALLBACKS`에 `agy-cli`, `codex-cli`, `copilot-cli`, `qwen-cli`, `opencode-cli` 추가 지원.
 
 예시 `.env`:
 ```
@@ -356,7 +357,7 @@ LLM_PRIMARY=gemini-cli
 LLM_FALLBACKS='[{"provider":"codex-cli"},{"provider":"copilot-cli"},{"provider":"ollama","baseUrl":"https://ollama.com","apiKey":"...","model":"glm-5.1:cloud"}]'
 ```
 
-CLI provider는 API 키 불필요. 로컬 바이너리(`gemini`/`codex`/`copilot`) 설치 + 로그인만 필요.
+CLI provider는 API 키 불필요. 로컬 바이너리(`gemini`/`agy`/`codex`/`copilot`/`opencode`) 설치 + 로그인만 필요.
 
 #### 로컬 임베딩 Provider
 
@@ -420,7 +421,7 @@ Symbolic Verification Layer는 확률론적 검색 파이프라인 위에 추가
 
 ## 서버 개요
 
-Memento MCP는 MCP(Model Context Protocol) 기반의 장기 기억 서버다. AI 에이전트의 세션 간 지식을 파편(Fragment) 단위로 영속화하고, 3계층 검색(키워드 L1 -> 시맨틱 L2 -> 하이브리드 RRF L3)으로 맥락에 맞는 기억을 회상한다.
+AnchorMind는 MCP(Model Context Protocol) 기반의 장기 기억 서버다. AI 에이전트의 세션 간 지식을 파편(Fragment) 단위로 영속화하고, 3계층 검색(키워드 L1 -> 시맨틱 L2 -> 하이브리드 RRF L3)으로 맥락에 맞는 기억을 회상한다.
 
 ### 핵심 개념
 
@@ -440,6 +441,7 @@ Memento MCP는 MCP(Model Context Protocol) 기반의 장기 기억 서버다. AI
 ```
 context() 호출
 -> core_memory: 앵커 + 고중요도 파편 (preference, error, procedure)
+   (앵커는 중요도순 상위 N개가 항상 포함된다. N은 서버의 MEMENTO_CONTEXT_ANCHOR_LIMIT 설정, 기본 10)
 -> working_memory: 현재 세션의 워킹 메모리
 -> system_hints: 미반영 세션 경고, 시스템 알림
 ```
@@ -507,7 +509,8 @@ reflect(
   decisions=["결정1"],
   errors_resolved=["원인: X -> 해결: Y"],
   new_procedures=["절차1"],
-  open_questions=["미해결1"]
+  open_questions=["미해결1"],
+  workspace="프로젝트명"
 )
 ```
 
@@ -539,6 +542,7 @@ reflect 규칙:
 - workspace: 프로젝트·직종·클라이언트 단위로 기억을 분리하려면 workspace 파라미터를 지정한다.
   예: `workspace: "memento-mcp"`, `workspace: "client-acme"`, `workspace: "personal"`
 - 미지정 시 키의 default_workspace가 자동 적용된다.
+- reflect도 workspace를 받는다. 멀티 프로젝트 환경에서는 reflect에 workspace를 지정해 세션 요약이 다른 프로젝트 context에 주입되는 것을 방지한다.
 - 전역 기억(모든 workspace에서 조회)으로 저장하려면 workspace를 지정하지 않고 키에 default_workspace도 없으면 된다.
 - 검색 시 workspace를 지정하면 해당 workspace 파편과 workspace=NULL(전역) 파편이 함께 반환된다.
 
@@ -617,15 +621,17 @@ tokenBudget을 초과하면 중요도 낮은 파편부터 잘림. 중요한 정�
   }],
   "searchPath": "L1+L2+RRF",
   "_meta": {
-    "searchEventId": "evt-abc123",
-    "hints": { "signal": "consider_context" },
-    "suggestion": { "code": "large_limit_no_budget", "message": "..." }
+    "searchEventId": 1234,
+    "hints": [
+      { "signal": "consider_context", "suggestion": "...", "trigger": "recall" }
+    ],
+    "suggestion": { "code": "empty_result_no_context", "message": "..." }
   }
 }
 ```
 
-- `_meta.searchEventId`: tool_feedback에 전달하여 검색 품질 개선
-- `_meta.hints.signal`: 시스템 권고 신호
+- `_meta.searchEventId`: tool_feedback에 전달하여 검색 품질 개선. search_events 테이블의 정수 id
+- `_meta.hints[0].signal`: 시스템 권고 신호. hints는 최대 1건이 담긴 배열이며 신호가 없으면 빈 배열
 - `_meta.suggestion.recommendedTool`: 후속 호출 권장 도구
 
 - similarity 0.7 이상: 높은 관련성
@@ -784,6 +790,17 @@ curl 응답 검증 체크:
 - keywords에 플랫폼명 포함: `["memento-mcp", "claude-code", "my-host"]`
 - recall 시 플랫폼 필터: `recall(keywords=["claude-code"])`
 
+## 멀티에이전트 협업
+
+여러 에이전트(또는 여러 플랫폼의 세션)가 하나의 팀 기억을 공유할 때의 운영 패턴. 별도 기능 없이 현행 도구만으로 동작한다.
+
+1. 같은 API 키 또는 같은 키 그룹 + 동일 workspace를 사용한다. 파편 공유 범위는 키 그룹 단위다.
+2. 공동 작업은 동일 caseId를 공유하고, 진행 파편은 즉시 remember한다(기본 scope=permanent — 저장 즉시 상대 에이전트가 recall로 조회 가능). scope=session 파편은 세션 전용 스크래치라 공유되지 않는다.
+3. agentId 정책을 통일한다(default 또는 팀 고정 ID). 에이전트마다 다른 agentId를 쓰면 recall의 agent 필터 때문에 상대 파편이 검색에서 제외된다.
+4. 중간 가설은 assertionStatus="inferred"로 저장하고, 검증한 에이전트가 amend로 verified/rejected 전환한다. 미검증 가설과 확정 사실을 섞지 않는 것이 협업 오염 방지의 핵심이다.
+5. 상대 에이전트의 파편이 유용했으면 tool_feedback(relevant=true)을 보낸다 — 링크 가중치 강화가 팀 검색 품질을 누적 개선한다.
+6. 전체 흐름 복기는 reconstruct_history(caseId) 또는 recall(caseMode=true). 모순 발견 시 link(relationType="contradicts") 명시 후 대표 파편을 amend로 정리한다.
+
 ## Codex Desktop / Deferred Tool Discovery (클라이언트 호환)
 
 Codex Desktop 등 일부 MCP 클라이언트는 도구를 deferred/lazy 로딩한다. tool_search가 검색어와 limit에 따라 그 턴에 일부 도구만 노출하므로, 서버 tools/list에 분명히 존재하는 recall이 저장 편향 쿼리+낮은 limit에서 빠질 수 있다.
@@ -808,7 +825,7 @@ RBAC default-deny: 도구 맵에 등록되지 않은 도구를 호출하면 `"Ac
 
 | 이름 | 타입 | 필수 | 설명 |
 |------|------|------|------|
-| content | string | O | 기억할 내용. 1~3문장, 300자 이내. episode는 1000자. |
+| content | string | O | 기억할 내용. 1~3문장, 300자 이내 작성 권장(저장 시 300자로 절삭, episode는 1000자). 4000자 초과 시 접수 단계에서 즉시 거부된다(-32602). |
 | topic | string | O | 주제 라벨. 프로젝트명 권장. |
 | type | string | O | fact, decision, error, preference, procedure, relation, episode |
 | keywords | string[] | - | 검색용 키워드. 3~5개. 프로젝트명+호스트네임 포함. |
@@ -827,10 +844,12 @@ RBAC default-deny: 도구 맵에 등록되지 않은 도구를 호출하면 `"Ac
 | outcome | string | - | 에피소드 결과 |
 | phase | string | - | 작업 단계 (예: planning, debugging, verification) |
 | resolutionStatus | string | - | open / resolved / abandoned |
-| assertionStatus | string | observed | observed / inferred / verified / rejected |
-| affect | string | - | 감정 태그. neutral / frustration / confidence / surprise / doubt / satisfaction |
+| assertionStatus | string | - | observed(기본) / inferred / verified / rejected |
+| affect | string | - | 감정 태그. neutral(기본) / frustration / confidence / surprise / doubt / satisfaction |
+| idempotencyKey | string | - | 재시도 안전 식별자. 같은 key_id 범위에서 같은 값으로 반복 호출하면 새 파편을 만들지 않고 기존 id를 반환. 권장 형식 {작업명}-{날짜}-{순번} |
+| dryRun | boolean | - | true 시 저장 없이 할당량·충돌 검사 결과와 실행 계획만 반환 |
 
-품질 게이트: content < 10자, URL만, type+topic null인 경우 거부. importance < 0.3이면 경고 + TTL short 자동 설정.
+품질 게이트: content < 10자, URL만, type+topic null인 경우 거부. content > 4000자면 "content length N exceeds max 4000" 메시지와 함께 -32602로 거부(300자 절삭보다 앞단의 수신 게이트). importance < 0.3이면 경고 + TTL short 자동 설정.
 
 에러: fragment_limit_exceeded 시 forget/memory_consolidate로 정리 안내.
 
@@ -840,9 +859,10 @@ RBAC default-deny: 도구 맵에 등록되지 않은 도구를 호출하면 `"Ac
 
 | 이름 | 타입 | 필수 | 설명 |
 |------|------|------|------|
-| fragments | array | O | [{content, topic, type, importance?, keywords?}] 최대 200건 |
+| fragments | array | O | [{content, topic, type, importance?, keywords?}] 최대 200건. 항목별 content가 4000자를 초과하면 해당 항목만 -32602로 실패 처리되고 나머지 항목은 정상 저장된다. 배열 전체의 content 총 문자수가 상한(기본 200,000자, `BATCH_REMEMBER_MAX_TOTAL_CHARS`)을 초과하면 sync/async 분기 이전에 요청 전체가 거부된다(항목별 4000자 게이트와 별개). |
 | async | boolean | - | true 시 비동기 모드. 선검증 후 Redis 큐 적재, `{async, accepted, jobId}` 즉시 반환. 워커가 ack·재시도(최대 3회)·dead-letter·기동 복구로 at-least-once 처리. 기본 false(동기). Redis 비활성 시 동기 폴백. |
 | stream | boolean | - | deprecated. 더 이상 SSE progress 이벤트를 보내지 않는다. 무시됨. |
+| workspace | string | - | 배치 기본 워크스페이스. 개별 파편에 workspace 미지정 시 이 값으로 대체. 미지정 시 키의 default_workspace 적용. |
 | agentId | string | - | 에이전트 ID |
 
 async 사용 지침: 대량(수십~200건) 일괄 저장에서 호출자 대기를 피하려면 `async: true`. 즉시 반환되는 것은 `accepted` 수와 `jobId`이며, per-fragment id는 반환되지 않고 파편은 워커 처리 후에 recall 가능(eventual)하다. `batch_status(jobId)`로 처리 상태를 확인할 수 있다. 재시도 안전이 필요하면 각 항목에 `idempotencyKey`를 넣는다. 소수 저장이나 직후 해당 파편을 곧바로 참조해야 하는 경우는 기본 동기 모드(async 생략)를 쓴다.
@@ -864,6 +884,8 @@ async 사용 지침: 대량(수십~200건) 일괄 저장에서 호출자 대기�
 | linkRelationType | string | - | 연결 관계 필터 (related, caused_by, resolved_by, part_of, contradicts) |
 | threshold | number | - | similarity 임계값 0~1 |
 | includeSuperseded | boolean | - | 만료 파편 포함. 기본 false. |
+| includePeerAgents | boolean | - | true 시 같은 키/workspace 스코프 내 다른 agentId 파편 포함 (멀티에이전트 협업용). 키·workspace 경계는 유지. 기본 false. |
+| includeKeyName | boolean | X | true 시 각 파편에 key_id·key_name(액세스 키 라벨) 포함. 같은 키 그룹 스코프의 정보만 노출. 팀 공유 workspace에서 파편 생성 주체 식별용. 기본 false |
 | asOf | string | - | ISO 8601. 해당 시점에 가까운 파편을 상위로 올리는 시간 근접 랭킹 기준(anchorTime)으로만 작동. 주의: 그 시점에 유효했던 버전을 복원하는 bitemporal as-of 필터가 아니며, 과거 시점 스냅샷 조회는 미구현. 특정 기간의 파편을 실제로 한정하려면 timeRange를 쓴다. |
 | timeRange | object | - | {from, to} 생성시각(created_at) 기준 시간창 필터. ISO 8601과 한국어 자연어("3일 전","지난 주","오늘") 모두 지원. 지정 시 시간 검색 경로가 동작하고 RRF에서 시간 근접 가중이 부스트된다. |
 | cursor | string | - | 페이지네이션 커서 |
@@ -883,6 +905,7 @@ async 사용 지침: 대량(수십~200건) 일괄 저장에서 호출자 대기�
 | isAnchor | boolean | - | true 시 앵커(고정) 파편만 반환 |
 | depth | string | - | 검색 깊이. high-level(decision/episode), detail(전체), tool-level(procedure/error/fact) |
 | affect | string/string[] | - | 감정 태그 필터. neutral / frustration / confidence / surprise / doubt / satisfaction. 배열 또는 단일 문자열 지원 |
+| fields | string[] | - | 응답에 포함할 파편 필드 목록(sparse fields). 미지정 시 전체 반환. 지원 키: id, content, type, topic, keywords, importance, created_at, access_count, confidence, linked, explanations, workspace, context_summary, case_id, valid_to, affect, ema_activation, key_id, key_name |
 
 ### forget
 
@@ -892,6 +915,7 @@ async 사용 지침: 대량(수십~200건) 일괄 저장에서 호출자 대기�
 | topic | string | - | 해당 주제 전체 삭제 |
 | force | boolean | - | permanent 파편 강제 삭제. 기본 false. |
 | agentId | string | - | 에이전트 ID |
+| dryRun | boolean | - | true 시 실제 삭제 없이 삭제 대상 파편 정보와 연결 링크 수만 반환 |
 
 타 테넌트(다른 API 키) 소유 파편을 삭제 시도하면 `"Fragment not found or no permission"` 오류가 반환된다. master key는 전체 파편에 접근 가능하다.
 
@@ -904,6 +928,7 @@ async 사용 지침: 대량(수십~200건) 일괄 저장에서 호출자 대기�
 | relationType | string | - | related(기본), caused_by, resolved_by, part_of, contradicts |
 | weight | number | - | 관계 가중치 (0-1, 기본 1) |
 | agentId | string | - | 에이전트 ID |
+| dryRun | boolean | - | true 시 실제 링크 생성 없이 사이클 여부·소유권 검사 결과만 반환 |
 
 fromId 또는 toId가 타 테넌트 소유 파편인 경우 `"Fragment not found or no permission"` 오류가 반환된다.
 
@@ -916,7 +941,7 @@ fromId 또는 toId가 타 테넌트 소유 파편인 경우 `"Fragment not found
 | 이름 | 타입 | 필수 | 설명 |
 |------|------|------|------|
 | id | string | O | 수정할 파편 ID |
-| content | string | - | 새 내용 |
+| content | string | - | 새 내용. 4000자 초과 시 -32602로 거부. |
 | topic | string | - | 새 주제 |
 | keywords | string[] | - | 새 키워드 |
 | type | string | - | 새 유형 |
@@ -924,7 +949,11 @@ fromId 또는 toId가 타 테넌트 소유 파편인 경우 `"Fragment not found
 | isAnchor | boolean | - | 고정 여부 |
 | supersedes | boolean | - | 기존 파편 대체 |
 | assertionStatus | string | - | 확인 상태 변경 (observed, inferred, verified, rejected) |
+| resolutionStatus | string | - | 케이스 해결 상태 변경 (open / resolved / abandoned). case_id 보유 파편은 resolved 전환 시 case_closed 이벤트가 자동 기록된다 |
+| outcome | string | - | 케이스 종결 결과 요약. resolutionStatus='resolved'와 함께 기록 |
+| phase | string | - | 작업 단계 변경 (planning, debugging, implementation, verification 등) |
 | agentId | string | - | 에이전트 ID |
+| dryRun | boolean | - | true 시 실제 변경 없이 패치 적용 후 예상 파편 상태만 반환 |
 
 ### reflect
 
@@ -939,10 +968,23 @@ fromId 또는 toId가 타 테넌트 소유 파편인 경우 `"Fragment not found
 | new_procedures | string[] | - | 확립된 절차 |
 | open_questions | string[] | - | 미해결 질문 |
 | narrative_summary | string | - | 3~5문장 서사 요약. episode 파편으로 저장되어 세션 연속성에 기여. |
-| task_effectiveness | object | - | {overall_success, tool_highlights[], tool_pain_points[]} |
+| task_effectiveness | object | - | {outcome, evaluator, evidence, unmet_requirements[], overall_success, tool_highlights[], tool_pain_points[]} |
+| workspace | string | - | 생성되는 모든 reflect 파편에 적용할 워크스페이스. 미지정 시 키의 default_workspace, 그것도 없으면 전역(NULL). |
 | agentId | string | - | 에이전트 ID |
 
 summary 또는 sessionId 중 하나 이상 필수.
+
+task_effectiveness 세부 필드:
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| outcome | string | 작업 종료 상태. completed(요구사항 전부 충족) / partial(일부 충족) / blocked(외부 요인으로 진행 불가) / abandoned(중단) / unknown(판정 불가). 확신이 없으면 추정하지 말고 unknown. 목록 밖 값은 미보고(NULL)로 기록된다. |
+| evaluator | string | outcome 판정 주체. agent(에이전트 자기보고) / automatic(테스트·빌드 자동 판정) / human(사용자 확인). outcome이 있을 때만 기록되며 생략 시 agent. |
+| evidence | string | outcome 판정 근거 (1000자 이내). 통과한 테스트 수, 확인한 로그, 사용자 승인 발화 등. |
+| unmet_requirements | string[] | 충족하지 못한 요구사항 (최대 20건·각 200자). partial/blocked/abandoned일 때 남은 항목을 명시. |
+| overall_success | boolean | 호환 유지 필드. 생략 시 outcome이 completed면 true, 그 외에는 false로 파생된다. |
+| tool_highlights | string[] | 유용했던 도구 |
+| tool_pain_points | string[] | 불편했던 도구 |
 
 ### context
 
@@ -954,6 +996,7 @@ summary 또는 sessionId 중 하나 이상 필수.
 | types | string[] | - | 기본: preference, error, procedure |
 | sessionId | string | - | 워킹 메모리 로드용 |
 | structured | boolean | - | 계층 구조 반환. 기본 false. |
+| includeKeyName | boolean | X | true 시 fragments 각 항목에 key_id·key_name(액세스 키 라벨) 포함. structured=true 트리 응답에는 적용되지 않음. 기본 false |
 | agentId | string | - | 에이전트 ID |
 | workspace | string | - | 컨텍스트 로드 범위. 지정 시 해당 workspace + 전역(NULL) 파편만 포함. |
 
@@ -970,6 +1013,7 @@ summary 또는 sessionId 중 하나 이상 필수.
 | context | string | - | 사용 맥락 (50자) |
 | session_id | string | - | 세션 ID |
 | trigger_type | string | - | sampled 또는 voluntary |
+| irrelevance_reason | string | - | not_stored / search_miss / scope_leak / topic_mismatch / other. relevant=false일 때만 기록되며, 그 외에는 값을 보내도 폐기된다 |
 | fragment_ids | string[] | - | 피드백 대상 파편 ID (EMA 조정) |
 | search_event_id | integer | - | recall의 _searchEventId |
 
@@ -1005,6 +1049,8 @@ startId가 타 테넌트 소유 파편인 경우 `"Fragment not found or no perm
 | 이름 | 타입 | 필수 | 설명 |
 |------|------|------|------|
 | id | string | O | 조회할 파편 ID |
+| agentId | string | - | 에이전트 ID |
+| includePeerAgents | boolean | - | true 시 같은 API 키 스코프 내 다른 agentId의 파편 이력도 조회. 테넌트(키) 경계는 유지. 기본 false |
 
 id가 타 테넌트 소유 파편인 경우 `"Fragment not found or no permission"` 오류가 반환된다.
 
@@ -1034,7 +1080,7 @@ id가 타 테넌트 소유 파편인 경우 `"Fragment not found or no permissio
 | workspace | string | - | 워크스페이스 필터 |
 
 반환값:
-- `ordered_timeline`: 시간순 파편 배열
+- `ordered_timeline`: 시간순 파편 배열 (각 항목에 agent_id 포함 — 멀티에이전트 케이스에서 기여 에이전트 식별용)
 - `causal_chains`: BFS 인과 체인 배열 `{ root_id, chain[], length, is_resolved }`
 - `unresolved_branches`: 미해결 파편 + error_observed 이벤트 배열
 - `supporting_fragments`: 체인에 포함되지 않은 나머지 파편
@@ -1061,7 +1107,10 @@ id가 타 테넌트 소유 파편인 경우 `"Fragment not found or no permissio
 | case_id | string | - | 특정 케이스 필터 |
 | session_id | string | - | 특정 세션 필터 |
 | time_range | object | - | { from: ISO8601, to: ISO8601 } |
+| workspace | string | - | 워크스페이스 필터. 지정 시 해당 workspace + 전역(NULL) 파편만 대상 |
 | limit | number | 20 | 최대 반환 수 (최대 100) |
+
+snake_case 파라미터에는 camelCase alias가 있다: `eventType`, `entityKey`, `caseId`, `sessionId`. 두 표기 중 어느 쪽을 보내도 동일하게 처리된다.
 
 반환값: `{ success, traces[], count }`
 
@@ -1163,7 +1212,7 @@ id가 타 테넌트 소유 파편인 경우 `"Fragment not found or no permissio
 
 ## 기억 저장 규칙
 
-1. 간결성: 파편 하나에 하나의 개념. 300자 이내 (episode 1000자).
+1. 간결성: 파편 하나에 하나의 개념. 300자 이내 (episode 1000자). 4000자 초과는 -32602로 즉시 거부되므로 사전에 300자 내로 요약해 작성한다.
 2. 범주화: topic에 프로젝트명. 검색 효율에 직결.
 3. 키워드: 3~5개. 프로젝트명 + 호스트네임 + 구체적 용어.
 4. 보안: API 키, 비밀번호, 토큰을 파편에 저장하지 않는다.
@@ -1520,18 +1569,23 @@ recall 시 신뢰도 기반 판단:
 
 ### _meta.hints 처리 규칙
 
-recall 또는 context 응답의 `_meta.hints` 필드를 읽는다:
+recall·context 응답과 쓰기 도구(remember/amend/forget) 성공 응답의 `_meta.hints` 필드를 읽는다:
 - `signal` 값을 읽어 상황 파악
 - `suggestion` 텍스트를 사용자에게 알리거나 즉시 실행 고려
 - `trigger` 필드에 지정된 도구를 다음 행동으로 우선 고려
 
 | signal | 의미 | 권장 행동 |
 |--------|------|----------|
+| topic_mismatch | 지정한 topic 파편 없음, 유사 topic 존재 | 제안된 유사 topic으로 재검색 |
 | no_results | 관련 기억 없음 | 작업 완료 후 remember |
+| contradiction_pending | 반환 파편에 미해결 contradicts 링크 | 상충 파편 확인 후 amend 정리 또는 잘못된 쪽 forget |
 | stale_results | 30일+ 경과 파편 | amend로 갱신 또는 forget |
 | consider_context | 파편 5개 이상 | includeContext=true 재검색 |
 | active_errors | 미해결 error 파편 존재 | 각 파편 확인 후 forget |
 | empty_context | 저장된 기억 없음 | 세션 후 remember/reflect |
+| feedback_sampled | 쓰기 도구 응답에 피드백 요청이 표집됨 | 직전 결과를 `tool_feedback(tool_name=대상 도구, trigger_type="sampled")`로 평가. relevant=false이면 `irrelevance_reason`도 함께 전달 |
+
+recall/context 힌트는 위 표의 순서대로 우선순위가 판정되어 최상위 1건만 실린다(topic_mismatch가 no_results보다 먼저 판정된다). `active_errors`·`empty_context`는 context 전용이다. `feedback_sampled`는 recall/context가 아니라 remember·amend·forget 성공 응답에만 실리며, `hints[0].args`에 `tool_name`·`trigger_type`이 채워져 있다.
 
 ### 능동 활용 트리거 테이블
 
@@ -1545,7 +1599,7 @@ recall 또는 context 응답의 `_meta.hints` 필드를 읽는다:
 
 ## LLM Provider Fallback
 
-Gemini CLI 외 `codex-cli`, `copilot-cli`, `qwen-cli` 포함 15개 이상의 외부 provider로 자동 fallback 가능. 설정: `LLM_PRIMARY=gemini-cli` (기본) + `LLM_FALLBACKS` JSON 배열. env 미설정 시 기존 Gemini CLI 단독 동작 유지. 형태소 분석은 기본적으로 로컬 CPU 분석기(MorphemeTokenizer)가 담당하며 LLM provider 체인을 사용하지 않는다(`MEMENTO_MORPHEME_TOKENIZER=llm` 설정 시에만 LLM 경로 활성화). 자세한 운영은 `docs/operations/llm-providers.md` 참조.
+Gemini CLI 외 `agy-cli`, `codex-cli`, `copilot-cli`, `qwen-cli`를 포함한 18개 provider로 자동 fallback 가능. 설정: `LLM_PRIMARY=gemini-cli` (기본) + `LLM_FALLBACKS` JSON 배열. env 미설정 시 기존 Gemini CLI 단독 동작 유지. 형태소 분석은 기본적으로 로컬 CPU 분석기(MorphemeTokenizer)가 담당하며 LLM provider 체인을 사용하지 않는다(`MEMENTO_MORPHEME_TOKENIZER=llm` 설정 시에만 LLM 경로 활성화). 자세한 운영은 `docs/operations/llm-providers.md` 참조.
 
 ## Symbolic Memory 활용 (opt-in)
 
@@ -1593,7 +1647,7 @@ reason code 6종 (`code` 필드값):
 
 ## 안티패턴
 
-다음 행동은 Memento를 무력화한다. 반드시 피할 것.
+다음 행동은 AnchorMind를 무력화한다. 반드시 피할 것.
 
 | 안티패턴 | 왜 나쁜가 | 올바른 행동 |
 |---------|----------|------------|
@@ -1606,7 +1660,7 @@ reason code 6종 (`code` 필드값):
 | 모든 내용을 하나의 파편에 저장 | 검색 정밀도 저하, 중요도 희석 | 원자적 분해 (1 사실 = 1 파편) |
 | 불필요한 remember 남발 | fragment_limit 쿼터 소진, 노이즈 증가로 검색 품질 저하 | 저장 전 "다음 세션에서 필요한가?" 자문, 일시적 정보는 저장하지 않음 |
 | importance 미지정 (모든 파편 0.5) | recall 시 중요/비중요 파편 구분 불가, 핵심 정보가 노이즈에 묻힘 | 상황별 중요도 기본값 표 참조, 최소 0.6 이상 명시 |
-| keywords 미지정 | 자동 추출에 의존하면 프로젝트명/호스트명 등 핵심 키워드 누락 | 프로젝트명 + 토픽 + 고유 식별자를 keywords에 명시적으로 포함 |
+| keywords 미지정 | 자동 추출에 의존하면 프로젝트명/호스트명 등 핵심 키워드 누락 | 프로젝트명 + 토픽 + 고유 식별자를 keywords에 명시적으로 포함. 지정해도 본문 추출 결과가 병합되므로 본문의 코드 식별자는 별도로 적지 않아도 색인된다 |
 | validation_warnings 무시 후 반복 remember | 동일 경고 파편이 누적되면 symbolic_hard_gate 활성화 시 전면 차단됨 | 경고 내용에 따라 content/linkedTo/resolutionStatus를 보강 후 재저장 |
 | recall 결과의 explanations reasonCodes를 fragment content에 복사 저장 | 검색 품질 메타데이터는 저장하면 안 됨. 노이즈로 검색 정밀도 저하 | reasonCodes는 UI 표시나 컨텍스트 힌트용으로만 사용, 저장 금지 |
 | Shadow mode 없이 Phase 2+ 직행 | 기존 데이터의 claim 백필 없이 explain/policy 활성화 시 경고 오탐 증가 | `MEMENTO_SYMBOLIC_SHADOW=true` + `scripts/backfill-claims.js --dry-run` 선행 후 단계적 활성화 |

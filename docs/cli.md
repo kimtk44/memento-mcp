@@ -2,7 +2,7 @@
 
 ## 개요
 
-`bin/memento.js`는 서버 없이 터미널에서 메모리 서버를 운영·조회할 수 있는 CLI 진입점이다.
+`bin/memento.js`는 서버 없이 터미널에서 메모리 서버를 운영·조회할 수 있는 CLI 진입점이다. 전역 설치 시 `anchormind` 명령으로 실행하며, `memento-mcp` 명령도 동일하게 동작한다.
 
 ```bash
 node bin/memento.js <command> [options]
@@ -47,7 +47,7 @@ node bin/memento.js stats
 
 ### local-only (원격 접속 불가)
 
-`serve`, `migrate`, `cleanup`, `backfill`, `health`, `update` 는 직접 DB / 프로세스에 접근하는 명령이므로 `--remote` 플래그와 함께 사용하면 에러를 반환한다.
+`serve`, `migrate`, `cleanup`, `backfill`, `health`, `update`, `export`, `import` 은 직접 DB / 프로세스에 접근하는 명령이므로 `--remote` 플래그와 함께 사용하면 에러를 반환한다.
 
 ### 원격 지원
 
@@ -98,7 +98,7 @@ node bin/memento.js serve --help
 
 ### migrate
 
-`lib/memory/migration-*.sql` 파일을 순서대로 실행한다. 이미 적용된 마이그레이션은 건너뛴다.
+`lib/memory/migrations/migration-*.sql` 파일을 순서대로 실행한다. 이미 적용된 마이그레이션은 건너뛴다.
 
 ```bash
 node bin/memento.js migrate
@@ -483,7 +483,7 @@ EMBEDDING_DIMENSIONS=384 DATABASE_URL=$DATABASE_URL \
   node scripts/post-migrate-flexible-embedding-dims.js
 ```
 
-`fragments`와 `morpheme_dict` 테이블의 벡터 컬럼 차원을 동시에 갱신한다.
+`fragments`와 `morpheme_dict` 테이블의 벡터 컬럼 차원을 동시에 갱신한다. 스킵 판정은 (타입, 선언 차원) 쌍으로 하며, `--dry-run`으로 변환 대상만 미리 확인할 수 있다. 변환은 테이블별 트랜잭션으로 실행되어 중간 실패 시 롤백된다. 변환 후 `fragments`는 서버 스케줄러가 자동 재임베딩하지만 `morpheme_dict`는 `node scripts/backfill-morpheme-dict.js`를 별도 실행해야 한다.
 
 ### 임베딩 백필
 

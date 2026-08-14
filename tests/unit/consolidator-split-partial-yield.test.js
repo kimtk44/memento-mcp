@@ -21,7 +21,17 @@ mock.module("../../lib/tools/db.js", {
 });
 
 mock.module("../../lib/config.js", {
-  namedExports: { resolveSplitChainConfig: () => null, LLM_PRIMARY: "gemini-cli", LLM_FALLBACKS: [] }
+  namedExports: {
+    resolveSplitChainConfig: () => null,
+    LLM_PRIMARY            : "gemini-cli",
+    LLM_FALLBACKS          : [],
+    /** ConsolidatorGC가 키워드 추출을 위해 write 계층을 로드하므로 필요 */
+    buildSearchPath        : () => "agent_memory, public"
+  }
+});
+
+mock.module("../../lib/tools/embedding.js", {
+  namedExports: { computeContentHash: (text) => `hash-${String(text).length}` }
 });
 
 mock.module("../../lib/logger.js", {
@@ -42,6 +52,11 @@ mock.module("../../lib/memory/consolidate/split-metrics.js", {
   }
 });
 
+/** 주체 앵커 게이트 무력화 — 이 테스트의 관심사가 아니며 형태소 분석기 로드도 피한다. */
+mock.module("../../lib/memory/consolidate/proper-nouns.js", {
+  namedExports: { extractSubjectAnchors: async () => [] }
+});
+
 mock.module("../../config/memory.js", {
   exports: {
     MEMORY_CONFIG: {
@@ -58,7 +73,7 @@ mock.module("../../config/memory.js", {
   }
 });
 
-const { ConsolidatorGC } = await import("../../lib/memory/ConsolidatorGC.js");
+const { ConsolidatorGC } = await import("../../lib/memory/consolidate/ConsolidatorGC.js");
 
 function makeStubs() {
   const inserted = [];

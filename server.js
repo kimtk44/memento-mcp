@@ -41,8 +41,8 @@ import {
 /** 도구 (통계 저장용) */
 import { saveAccessStats } from "./lib/tools/index.js";
 import { shutdownPool, getPrimaryPool } from "./lib/tools/db.js";
-import { getMemoryEvaluator } from "./lib/memory/MemoryEvaluator.js";
-import { getBatchRememberWorker } from "./lib/memory/BatchRememberWorker.js";
+import { getMemoryEvaluator } from "./lib/memory/signals/MemoryEvaluator.js";
+import { getBatchRememberWorker } from "./lib/memory/write/BatchRememberWorker.js";
 
 /** 메트릭 */
 import { recordHttpRequest } from "./lib/metrics.js";
@@ -51,11 +51,12 @@ import { recordHttpRequest } from "./lib/metrics.js";
 import { startSchedulers } from "./lib/scheduler.js";
 
 /** Reranker 사전 로드 */
-import { preloadReranker } from "./lib/memory/Reranker.js";
+import { preloadReranker } from "./lib/memory/read/Reranker.js";
 
 /** 형태소 분석기 워밍업 */
 import { warmup as warmupMorpheme } from "./lib/memory/embedding/MorphemeTokenizer.js";
-import { logInfo, logWarn }         from "./lib/logger.js";
+import { logInfo, logWarn, logError } from "./lib/logger.js";
+import { installProcessGuards }     from "./lib/process-guards.js";
 
 /** 임베딩 차원 일관성 검증 */
 import { checkEmbeddingConsistency } from "./scripts/check-embedding-consistency.js";
@@ -339,7 +340,7 @@ server.listen(PORT, () => {
 /**
  * Graceful Shutdown
  */
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal, { exitCode = 0 } = {}) {
   const DRAIN_TIMEOUT_MS = 30_000;
   console.log(`\n[Shutdown] Received ${signal}, starting graceful shutdown...`);
 
@@ -401,8 +402,17 @@ async function gracefulShutdown(signal) {
   console.log("[Shutdown] Final stats saved");
 
   console.log("[Shutdown] Graceful shutdown complete");
-  process.exit(0);
+  process.exit(exitCode);
 }
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+installProcessGuards({
+  logError: (msg, meta) => logError(msg, null, meta),
+  onFatal:  () => {
+    /** drain 행 방지 — graceful 경로가 35초 내 못 끝나면 강제 종료 */
+    setTimeout(() => process.exit(1), 35_000).unref();
+    gracefulShutdown("uncaughtException", { exitCode: 1 });
+  }
+});

@@ -1,6 +1,226 @@
 # Changelog
 
-## [Unreleased]
+## [5.6.2] - 2026-08-13
+
+임베딩 차원 마이그레이션 판정 결함(#54)과 운영 와치독 재시작 폭풍을 정비한 패치.
+
+### Fixed
+- 임베딩 차원 마이그레이션 스킵 판정을 (타입, 선언 차원) 쌍 비교로 교체한다 (#54). pgvector는 `vector(1536)`·`vector(384)`를 모두 `udt_name='vector'`로 보고하므로 타입 이름 단독 비교가 실제 차원 변경을 스킵했고, transformers 384차원 전환 환경에서 임베딩 쓰기 전량 실패·시맨틱 검색 무력화로 이어졌다. 선언 차원은 `pg_attribute.atttypmod`에서 읽으며 무차원 선언(-1)도 변환 대상으로 판정한다.
+- 기동 게이트(check-embedding-consistency)가 임베딩 데이터 전량 NULL 상태의 선언 차원 불일치를 통과시키던 공백을 막는다. 행 표본 검사 전에 선언 차원 검사를 수행해, 불일치 상태로 서버가 기동해 NULL을 양산하기 전에 차단한다.
+- 와치독 스크립트에 기동 유예 120초를 도입한다. 유예 없이는 부팅(모델 로드 등)이 헬스체크 주기를 넘는 순간 매분 강제 재시작이 반복되는 재시작 폭풍이 된다.
+
+### Added
+- 차원 마이그레이션 스크립트에 `--dry-run`(변환 대상 미리보기), 테이블별 트랜잭션(중간 실패 시 롤백으로 "임베딩 전량 NULL + 인덱스 없음" 중간 상태 방지), 변환 후 검증 출력(NULL 수·`pg_index.indisvalid`)을 추가한다. halfvec 목표 시 실행 경로 호환 미검증 경고를 출력한다.
+- (타입, 차원) 판정 로직을 `lib/memory/embedding/column-spec.js`로 분리해 마이그레이션 스크립트와 기동 게이트가 공유한다.
+
+### Changed
+- 마이그레이션의 HNSW 인덱스 재생성 파라미터를 기본 스키마와 동일한 `ef_construction=128`로 정합한다(기존 64는 재생성 시 검색 품질 회귀 요인).
+
+## [5.6.1] - 2026-08-12
+
+운영 인스턴스 주간 텔레메트리(recall 무관 피드백 27건 중 topic_mismatch 17건)와 열린 이슈 2건(#51, #52)을 반영한 검색 정합 패치.
+
+### Fixed
+- recall 명시 topic/type 필터가 L1 유래 후보에서 소실되던 경로 2곳을 차단한다 (#51). topic/type 인덱스가 0건이면 L1이 공집합을 반환하고(0건 집합이 교집합에서 누락되어 keyword 집합 단독이 교집합 행세하던 결함), L1 미스분 ID 보충 조회 결과에 SearchScope(topic/type/caseId/phase/affect)와 timeRange를 정합 적용한다. 오기 topic은 이제 0건과 함께 `topic_mismatch` 후보 힌트로 응답한다.
+- RRF 병합에서 L1의 ID-only 항목이 이후 도착한 완전 파편 객체로 승격되지 않아 content 부재 필터에서 정당한 L1 hit가 탈락하던 결함을 수정한다.
+- `morpheme_dict`의 embedding NULL 행이 캐시 히트로 오인되어 재계산 없이 영구 잔존하던 결함을 수정한다 (#52). NULL 행을 miss로 취급해 재계산하고, 등록 쿼리를 NULL 행 한정 조건부 UPDATE로 교체해 접근 시 치유한다. 유효 임베딩은 덮어쓰지 않아 프로바이더·차원 혼합을 방지한다.
+
+### Added
+- `scripts/backfill-morpheme-dict.js` — morpheme_dict NULL 행 일괄 재임베딩. 커서 기반 배치, `--dry-run`, 실패 형태소 격리(무한 재선택 방지), 배치 전멸 시 중단. 기존 `backfill-embeddings.js`는 fragments 전용이라 이 테이블을 다루지 않는다.
+- 형태소 임베딩 등록에 프로바이더 오류 분류(인증·한도·서버·네트워크)와 지수 백오프 쿨다운(30초~10분), 동시 중복 요청 방지(inFlight)를 도입한다. 배치 1회 실패가 단건 최대 200회 호출로 증폭되던 경로를 차단한다.
+
+### Changed
+- L1 폴백 계약: 명시 조건(keywords/topic/type/text)이 있는 검색은 인덱스 0건 시 최근 접근 파편 폴백을 발동하지 않는다. 폴백은 조건 전무 조회 전용이다.
+
+## [5.6.0] - 2026-08-06
+
+운영 인스턴스의 최근 7일 검색 텔레메트리(무결과 mixed 검색 60건 중 51건이 topic 필터 조합)와 열린 이슈 2건(#48, #33)을 반영한다.
+
+### Added
+- recall이 topic 지정 검색에서 0건일 때 키 스코프의 유사 토픽 후보를 `_meta.hints`의 `topic_mismatch` 신호로 반환한다. 후보는 topic별 파편 수 집계를 형태소 벡터 코사인으로 랭킹해 상위 3개까지 제시하며, topic 필터 자체는 정확일치 그대로다. 후보가 없으면 기존 `no_results`로 떨어진다.
+- `task_feedback`에 `outcome`(completed/partial/blocked/abandoned/unknown), `evaluator`(agent/automatic/human), `evidence`, `unmet_requirements` 필드 추가 (#48, migration-039). `overall_success`만으로는 "완수했으나 도구가 방해했다"를 표현할 수 없어 성공률 지표가 변별하지 못했다. `overall_success`는 호환을 위해 유지하고, 기존 행은 NULL(미보고)로 남겨 신규 표본과 분리한다.
+- `tool_feedback`에 `irrelevance_reason`(not_stored/search_miss/scope_leak/topic_mismatch/other) 추가 (#48). 저장된 적 없는 내용을 찾은 호출과 검색이 실패한 호출을 분리 집계한다. ConsolidatorGC 피드백 리포트에 원인 분포·outcome 분포 블록이 추가되고, `memory_stats`의 evaluation에 `completed_rate`·`irrelevance` 키가 늘어난다(기존 키 불변).
+- 쓰기 도구(remember/amend/forget) 성공 응답의 `_meta.hints`에 확률적 피드백 유도(`feedback_sampled`) 추가 (#48). 표본이 recall에 편중되는 문제의 완화책으로, 세션당 최대 2건·쿨다운 15분·도구별 확률(remember 0.10, amend/forget 0.25)로 제한하며 `MEMENTO_FEEDBACK_SAMPLING=false`로 끌 수 있다. 유도된 피드백은 `trigger_type='sampled'`로 저장되어 자발 표본과 분리 관측된다.
+- 분할 자식 품질 게이트 2종 (#33). 부모 원문의 주어 앵커(고유명사·코드 식별자·라틴+한글 혼합 토큰)가 자식 본문에 하나도 남지 않으면 reject(`subject_loss`), 부모에 없는 시제·서법 표지(예정/의도/추정/당위 4패밀리)를 자식이 새로 도입하면 reject(`modality_drift`). 완료 사실이 미래 계획으로 바뀌거나 주어를 잃은 조각이 독립 파편이 되는 경로를 차단한다. `MEMENTO_SPLIT_SUBJECT_GATE`/`MEMENTO_SPLIT_MODALITY_GATE`(기본 활성)로 토글하며, 앵커 미추출 시 게이트를 적용하지 않는다. `memento_consolidate_split_skipped_total`에 두 reason 라벨이 추가된다(자식 단위 집계).
+
+### Changed
+- topic 정확일치 필터가 0건을 반환한 검색을 SearchParamAdaptor의 minSimilarity 학습 표본에서 제외한다. topic 오기가 반복되면 원인과 무관한 시맨틱 임계값이 하향 학습되던 경로를 차단한다.
+- remember·recall의 topic 값에 trim을 적용한다. 소문자화는 기존 저장 topic과의 불일치를 만들므로 도입하지 않는다.
+
+### 배포 주의
+- migration-039를 적용하지 않은 DB에서 `tool_feedback` 저장이 실패한다. 서비스 재시작 전 마이그레이션을 선행한다.
+
+## [5.5.0] - 2026-08-02
+
+운영 인스턴스의 최근 15일 피드백을 분석해 도출한 결함 4건을 수정한다. 모두 격리 DB에서 실제 코드 경로로 재현을 확인한 뒤 조치했다.
+
+### Fixed
+- `amend`가 `resolutionStatus`/`outcome`/`phase`를 받아도 반영하지 않고 `updated: true`를 반환하던 문제 수정 (#43). 세 필드가 도구 스키마와 `FragmentWriter`의 갱신 허용 필드에 모두 없어 조용히 버려졌고, `SKILL.md`와 `lib/jsonrpc.js`가 안내하는 케이스 종결 절차가 수행되지 않았다. 변경 전 상태는 `fragment_versions`에 UPDATE와 동일 트랜잭션으로 기록하며(migration-038), `resolved` 전환 시 `case_closed` 이벤트를 남긴다.
+- 반영 가능한 필드가 하나도 없는 `amend` 호출이 성공으로 보고되던 문제 수정 (#43). `updated: false`와 `unsupportedFields`를 반환한다.
+- 만료(`valid_to` 설정) 파편 `amend`가 미존재 id와 동일한 오류를 반환하던 문제 수정 (#43). 만료 파편은 이력이므로 수정 불가 정책을 유지하되 `validTo`와 함께 구분되는 오류를 반환한다.
+- `type`/`topic` 필터가 L1/L2에만 적용되어, `timeRange` 지정 시 시간창 레이어가 타입 무관 파편을 수집하고 RRF에서 2배 가중을 받아 상위를 점령하던 문제 수정 (#44). `SearchScope`에 두 필드를 추가하고 `searchByTimeRange`·`searchBySemantic`에 전달한다. 격리 DB 실측 기준 `type=decision` 지정 시 반환 8건(불일치 6건)에서 2건(불일치 0건)으로 변경.
+- 사용자가 `keywords`를 지정하면 본문 추출이 수행되지 않아 본문에만 등장하는 코드 식별자가 색인되지 않던 문제 수정 (#45). 지정 키워드를 앞에 두고 중복 제거 후 최대 10개까지 추출 결과를 병합한다. 운영 데이터 기준 본문에 식별자가 있는 파편 3,032건 중 1,265건이 대상이었다.
+- `morphemeIndex`의 `minSimilarity`·`fallbackThreshold`·`fallbackLimit`이 검색 경로에서 소비되지 않던 문제 수정 (#46). 형태소 프로브가 `semanticSearch.minSimilarity`(0.4)를 재사용해, 문장 임베딩보다 코사인이 낮은 형태소 평균 벡터가 사실상 전량 탈락했다. 전용 임계값 0.15를 적용하고 기본 결과가 `fallbackThreshold` 이하일 때만 `fallbackLimit`까지 채택한다.
+
+### Changed
+- `FragmentReader.searchBySemantic`이 위치 인자 대신 옵션 객체를 받는다 (#44). 필터가 12종을 넘어 순서 오류 위험이 커졌다.
+- `scripts/backfill-split-keywords.js`, `scripts/backfill-body-keywords.js`로 기존 파편을 소급 처리할 수 있다. 둘 다 dryRun 기본.
+
+## [5.4.1] - 2026-08-02
+
+### Security
+- 의존성 취약점 9건 해소. `npm audit` 기준 잔여 0건.
+  - `fast-uri` 3.1.2 → 3.1.5 (host confusion 2건: GHSA-v2hh-gcrm-f6hx, GHSA-4c8g-83qw-93j6). `@modelcontextprotocol/sdk` → `ajv` 경유 전이 의존성이다.
+  - `sharp` 0.34.5 → 0.35.3 (libvips 상속 취약점 4건: GHSA-f88m-g3jw-g9cj). `@huggingface/transformers`의 선언 범위(`^0.34.1`) 밖이라 override로 강제하며, 로컬 임베딩 통합 테스트로 호환을 확인했다.
+  - `brace-expansion` 1.1.14 → 1.1.18 (DoS 2건: GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg).
+  - `@hono/node-server` 1.19.14 → 2.0.12 (Windows 경로 순회: GHSA-frvp-7c67-39w9).
+  - `mongoose` 9.6.2 → 9.9.1 (프로토타입 오염: GHSA-664h-wqgq-64gw).
+  - `tar` 7.5.20 → 7.5.22 (스택 오버플로 DoS: GHSA-r292-9mhp-454m).
+  - `body-parser` 2.2.2 → 2.3.0 (limit 무력화 DoS: GHSA-v422-hmwv-36x6).
+
+### Changed
+- `@modelcontextprotocol/sdk` `^1.27.1` → `^1.30.0`. 1.30.0이 `@hono/node-server` 2.x를 지원 범위에 포함한다.
+- `docs/INSTALL.md`의 `CONSOLIDATE_INTERVAL_MS` 기본값 표기를 실제 값(21600000 = 6시간)으로 정정.
+
+## [5.4.0] - 2026-08-02
+
+### Fixed
+- `splitLongFragments`가 생성한 자식 파편이 `keywords`를 빈 배열로 저장해 키워드 배열 교집합(`keywords && $1`)을 사용하는 검색 경로에서 조회되지 않던 문제 수정 (#32). 자식 본문에서 `FragmentFactory.extractKeywords` 결과를 추출해 저장한다. 기존 파편은 `scripts/backfill-split-keywords.js`로 소급 처리한다(dryRun 기본, `--execute`로 반영).
+- 분할된 원본 파편이 물리 삭제될 수 있던 문제 수정 (#33). `deleteExpired`의 utility 분기에는 `valid_to` 조건도 링크 보호도 없는데 분할은 원본을 `valid_to` 설정과 함께 importance 하향·`cold` 강등 처리하므로 anchor/permanent 보호가 적용되지 않았다. 자식이 남아 있는 원본을 삭제 후보에서 제외한다.
+- E2E `group-key-isolation` 스위트가 `api_keys`에 없는 key_id로 파편을 저장해 외래키 위반으로 실패하던 문제 수정. 시드 키를 선삽입하고 teardown에서 시드 파편을 물리 삭제해 재실행 가능성을 확보했다.
+- `lib/memory/memory-schema.sql`이 `content_hash` 전역 UNIQUE 인덱스를 생성해, migration-031이 도입한 키별 partial unique index(`uq_frag_hash_master`, `uq_frag_hash_per_key`)와 상충하던 문제 수정. 스키마 파일을 재적용할 때 키별 유일성이 전역 유일성으로 되돌아갔다.
+
+### Added
+- 분할 앵커 커버리지 게이트. 분할은 원문을 자르지 않고 LLM이 다시 쓰므로 명제 하나가 통째로 누락될 수 있는데, 기존에는 자식 수가 `minItems`만 넘으면 원본을 대체했다. 자식 저장 직전에 원문의 수치 앵커(날짜·금액·비율·측정값)가 자식 합집합에 남아 있는지 대조하고, 빠진 것이 있으면 원본을 유지한 채 중단한다. 날짜 `2026-07-15`는 `2026`/`07`/`15`로, 범위 `75~85`는 `75`/`85`로 분해 비교하므로 표기 변형은 통과한다.
+- `memento_consolidate_split_skipped_total`에 `anchor_loss` reason 라벨 추가.
+- `scripts/backfill-split-keywords.js`.
+
+### Changed
+- Antigravity CLI provider(`agy-cli`) 추가. `LLM_PRIMARY`/`LLM_FALLBACKS`에서 선택 가능하며 `--print --mode plan --sandbox`로 실행되어 파일 수정과 도구 승인을 하지 않는다.
+
+## [5.3.1] - 2026-07-27
+
+### Fixed
+- keywords-only recall에서 시맨틱 보조(L3kw) 결과가 정확 키워드 일치 파편을 랭킹에서 밀어내거나 tokenBudget 절단으로 소실시킬 수 있던 문제 수정 (#30). 정확 일치 파편에 절단 이전 랭킹 가산(`ranking.exactKeywordBoost`, 기본 0.35)을 적용하고, 절단을 슬롯 보장 방식(정확 일치 예산 50% 선점, 시맨틱 보조 25% 몫 보장, 잔여 경쟁)으로 확장했다. text/mixed 쿼리의 절단 동작은 변경 없다.
+- explanations의 `semantic_similarity` 사유가 `L3kw` 세그먼트 회수 파편에도 부여된다.
+
+### Changed
+- L3kw 보조 질의를 정규화(소문자·중복 제거·정렬, contextText 제외)해 임베딩 캐시 적중률을 높이고, 이 경로의 형태소 보조 검색을 생략한다. 실측 기준 L3kw 발동 지연 p50이 약 2.5초에서 0.5~1.1초로 감소.
+- L3kw 실행 상한 도입: `MEMENTO_KEYWORD_FALLBACK_TIMEOUT_MS`(기본 1500ms, 100~60000 클램프). 초과 시 보조 없이 즉시 반환하며 searchPath에 `L3kw:timeout`을 남긴다.
+
+## [5.3.0] - 2026-07-26
+
+### Added
+- text 없는 keywords-only recall에 L3 시맨틱 보조 경로. keywords(+contextText) 합성 텍스트 임베딩이 L2와 병렬 수행되어 저장 keywords 배열에 없는 용어도 content 기반으로 회수된다. searchPath에 `L3kw:N` 세그먼트가 남으며 `semanticSearch.keywordFallback`(env `MEMENTO_KEYWORD_SEMANTIC_FALLBACK=false`)로 비활성화할 수 있다.
+- `reflect`에 `workspace` 파라미터 노출. 생성되는 모든 reflect 파편에 적용되며, 미지정 시 API 키의 default_workspace → 전역(NULL) 순으로 폴백한다.
+### Fixed
+- 서버 재기동 후 Redis에서 복원된 세션이 이전 협상값(negotiatedVersion)을 그대로 되살려 이후 모든 요청이 400으로 거부되던 문제 수정. 협상값과 헤더가 달라도 지원 목록에 있는 값이면 헤더 값으로 재앵커링해 통과시키며(`mcp_protocol_version_reanchored_total` 카운터로 관측), 미지원 버전에 대한 400 거부는 유지된다. initialize 시 협상값을 Redis에 즉시 영속한다. (#26)
+
+### Changed
+- `batch_remember`의 fragments가 JSON 인코딩 문자열로 전달된 경우 원인을 명시하는 별도 오류 메시지를 반환한다.
+- JSON body 파싱 실패(-32700) 응답 message에 파서 위치 정보를 보존한다. 대량 배열 요청에서 손상 지점을 특정할 수 있다.
+- search_events의 `l3_count`가 keywords 폴백 보조 세그먼트(`L3kw:N`)도 집계한다.
+
+## [5.2.3] - 2026-07-16
+
+### Changed
+- `semanticSearch.minSimilarity` 기본값 0.5→0.4. 12쿼리 골드셋 실측에서 상위5 유용 결과 수가 최대인 지점으로, 어휘 중첩이 낮은 회상형 질의의 무응답을 줄인다(0.35는 노이즈 유입이 이득을 상쇄해 기각). SearchParamAdaptor 기존 학습 행도 0.4 상한으로 동기화됐다.
+
+## [5.2.2] - 2026-07-16
+
+### Fixed
+- text/mixed recall의 RRF importance 컷오프가 기준값 미지정 시 모든 후보를 탈락시키던 문제 수정. 기준 미지정 시 no-op으로 동작하며, `rrfSearch.candidateMinImportance`(기본 0.1)를 정책값으로 명시한다.
+- `extractKeywords`가 한글 토큰의 조사 접미를 제거하고, 카멜/스네이크 케이스 코드 식별자를 소문자화 없이 원형 보존한다.
+
+### Added
+- morpheme_indexed 백필 잡: 5분 주기로 미인덱싱 파편을 배치(기본 500) 처리해 형태소 L3 커버리지를 회복한다. embedding-consistency 경고에 백필 잡 상태가 병기된다.
+- 마이그레이션 스크립트 3종(dryRun 기본): reflect 파편 keywords 재추출(`scripts/reextract-reflect-keywords.js`), reflect permanent TTL 강등, SearchParamAdaptor min_similarity 리셋.
+- recall 품질 검증 지표 SQL과 스모크 절차 문서(`docs/operations/recall-quality-verification.md`, `scripts/recall-quality-metrics.sql`).
+
+### Changed
+- reflect decision 파편 importance 0.8→0.7, `reflectionPolicy.maxImportance` 0.3→0.55 — reflect 파편의 permanent 승격을 차단하고 정리 주기가 실제로 동작하게 한다.
+
+## [5.2.1] - 2026-07-16
+
+### Fixed
+- `recall`의 `fields` sparse 목록이 응답에 적용되지 않던 문제 수정. 필드 선택이 응답 프로젝션에서 최종 적용되며, 파생 키(`confidence`, `age_days`)와 `keywords`(이 경우 `includeKeywords` 없이도 포함)·`valid_to`·`affect`·`ema_activation`도 요청 시 반환된다.
+- `key_id`가 `includeKeyName` 미지정 시에도 recall 응답에 포함되던 문제 수정. `key_id`·`key_name` 모두 `includeKeyName=true`일 때만 포함된다.
+
+## [5.2.0] - 2026-07-16
+
+### Added
+- `recall`·`context`에 `includeKeyName` 파라미터: true 시 각 파편에 `key_id`·`key_name`(액세스 키 라벨)을 포함한다. 같은 키 그룹 스코프의 정보만 노출되며 기본 false. `recall`의 `fields` sparse 목록에도 `key_id`/`key_name`을 지정할 수 있다.
+- 임베딩 API 호출에 per-call 절대 타임아웃(`EMBEDDING_TIMEOUT_MS`, 기본 8000ms)과 프로세스 전역 동시성 세마포어(`EMBEDDING_CONCURRENCY`/`EMBEDDING_SEM_WAIT_MS`)를 적용해 임베딩 서비스 지연이 전체 요청 큐로 전파되는 것을 차단. 세마포어 대기 초과는 `mcp_embedding_semaphore_wait_exceeded_total`로 관측 가능.
+- `initialize`(무세션) 요청에 인증·DB 조회 이전 IP rate limit 선차단 추가. 차단 시 429 응답과 함께 `mcp_initialize_ip_rate_limited_total` 카운터가 증가한다.
+- `batch_remember`에 배열 전체 content 총 문자수 게이트(`BATCH_REMEMBER_MAX_TOTAL_CHARS`, 기본 200,000자) 추가. 항목별 4000자 상한과 별개로 요청 전체를 사전에 거부한다.
+- `QuotaChecker.check()`에 캐시 우선 판정 경로 추가: 잔여 할당량이 `QUOTA_NEAR_LIMIT_MARGIN`(기본 10)보다 크면 FOR UPDATE 트랜잭션 없이 통과하며, 이 경로는 `mcp_quota_cache_pass_total`로 관측된다. 한도 임박 시에만 기존 정밀 검사로 전환된다.
+- `EmbeddingWorker`가 remember() 동기 경로에서 이미 생성된 임베딩 벡터를 캐시로 재사용하여 동일 파편에 대한 중복 임베딩 API 호출을 제거.
+- 관리자 REST에 키 스코프 파편 조회·검색·통계·내보내기 엔드포인트 추가(`key_id`/`group_id` 스코프 적용).
+
+### Changed
+- 외부 reranker 3연속 실패 시 기본 정책을 in-process 전환에서 쿨다운 스킵으로 변경(`RERANKER_EXTERNAL_FALLBACK=skip`, 기본값). 쿨다운(`RERANKER_EXTERNAL_COOLDOWN_MS`, 기본 60초) 동안 external 호출을 생략하고 원점수(RRF 순서)를 유지하며, 만료 후 1건 재시도한다. `RERANKER_EXTERNAL_FALLBACK=inprocess`로 이전 동작(ONNX in-process 전환) 유지 가능.
+- 관리 콘솔 메모리 뷰: 1024px 미만 화면에서 Fragment Detail이 하단 고정 시트로 표시된다. 닫기 버튼과 ESC로 닫을 수 있으며 데스크톱 레이아웃은 동일하다.
+- admin API의 CORS 허용 origin을 화이트리스트 반사 방식으로 처리하고 인증 실패를 로깅한다(`ADMIN_ALLOWED_ORIGINS`).
+
+### Fixed
+- 외부 reranker의 TEI(text-embeddings-inference) 호환: 요청에 `texts` 필드를 `documents`와 함께 전송하고, `[{ index, score }]` 배열 응답을 매핑하며, 빈 바디 `/health`를 허용한다 (#22, @itismyfield 기여).
+- 외부 rerank 배열 응답 처리: 빈 배열은 실패로 간주해 폴백 경로를 타고, `index` 범위와 `score` 타입이 유효한 항목만 반영한다.
+
+## [5.0.1] - 2026-07-15
+
+### Added
+- 프로세스 전역 에러 가드(`lib/process-guards.js`): `unhandledRejection`은 로깅 후 프로세스를 유지하고, `uncaughtException`은 로깅 후 graceful shutdown을 exit code 1로 수행한다(onFatal 1회 보장, 35초 강제 종료 타이머). SIGTERM/SIGINT 경로는 기존과 동일하게 exit 0으로 종료한다.
+
+### Changed
+- 전이 의존성 lockfile 갱신 (hono 4.12.30, protobufjs 7.6.5, tar 7.5.20).
+
+## [5.0.0] - 2026-07-14
+
+### Changed
+- 프로젝트명을 AnchorMind로 변경 (패키지명 anchormind-mcp). memento-mcp라는 이름이 다수의 동명·유사 프로젝트와 겹쳐 개명했으며, 도구명·환경 변수(MEMENTO_*)·DB 스키마·API 경로·키 형식(mmcp_) 등 런타임 계약은 모두 그대로다 (Breaking 없음).
+- CLI bin에 `anchormind` 명령 추가. 기존 `memento-mcp` 명령은 별칭으로 유지.
+- MCP initialize 응답의 serverInfo.name을 `anchormind-server`로 변경 (표시 메타데이터).
+- admin 콘솔·로그인 화면 브랜딩과 README 로고를 AnchorMind로 교체.
+- README·SKILL.md·docs 전반의 표기를 현행 코드 기준으로 정비.
+
+## [4.10.0] - 2026-07-14
+
+### Added
+- `recall`에 `includePeerAgents` 파라미터: true 시 같은 API 키/workspace 스코프 내 다른 agentId의 파편도 검색에 포함한다(기본 false, 키·workspace 경계는 유지). L1 키워드·topic·L2 시맨틱·형태소 hydrate·시간 범위 경로에 일괄 적용.
+- recall 응답 `_meta.hints`에 `contradiction_pending` 신호: 반환 파편에 미해결 contradicts 링크가 있으면 amend 정리를 권고한다. 힌트 우선순위는 no_results > contradiction_pending > stale_results > consider_context.
+- `reconstruct_history` 타임라인 항목과 관리자 `/memory/graph` 노드에 `agent_id` 필드 포함 — 멀티에이전트 케이스의 기여 에이전트 식별.
+- SKILL.md에 "멀티에이전트 협업" 섹션 신설(`get_skill_guide(section="collaboration")`).
+
+## [4.9.0] - 2026-07-14
+
+### Added
+- 관리자 API `GET /memory/fragments/:id`: 파편 전문·keywords·메타·1-hop 링크를 반환하는 상세 조회. `key_id`/`group_id` 스코프를 적용하며 스코프 밖 id는 404.
+- 관리자 API `GET /memory/fragments`에 `q` 파라미터: content 본문 부분 일치 검색(ILIKE, 와일드카드 이스케이프).
+- `MEMENTO_CONTEXT_ANCHOR_LIMIT` 환경 변수: context 응답에 포함되는 앵커 파편 개수 설정(기본 10, 1~30 클램프). `config/memory.js contextInjection.maxAnchorFragments`.
+- admin 메모리 뷰: 본문 검색 입력(Enter 실행 지원), 파편 클릭 시 상세 인스펙터(전문·keywords·링크·그래프 뷰 이동), EXPORT JSONL 다운로드 버튼, episode/relation 타입 필터.
+- admin 사이드바 오프캔버스 토글: 768px 이하에서 메뉴 버튼·오버레이·ESC로 여닫는다.
+
+### Changed
+- (Breaking) `GET /export`는 `key_id` 또는 `group_id` 지정이 필요하다. 전체 반출은 `confirm=full`을 명시한 경우에만 수행한다. `group_id`·`type` 파라미터가 추가되고 `topic`은 부분 일치(ILIKE)로 동작한다.
+- `GET /memory/fragments` 목록 응답에 `content`(200자 절삭)·`keywords`·`access_count` 필드가 포함된다.
+- admin 메모리 뷰의 Retrieval Analytics와 Search Activity 패널이 `GET /memory/search-events` 데이터(검색량·zero-result 비율·레이턴시 분위수·경로 분포·상위 키워드)를 표시한다. 값이 없으면 `--`로 표시한다.
+- structured context의 `rankedInjection`이 앵커 파편을 상단 고정으로 반환한다.
+- admin 사이드바 활성 하이라이트가 뷰 전환 시 즉시 갱신된다.
+- admin 콘솔 디자인 시스템 교체: JetBrains Mono 단일 폰트, 플랫 헤어라인 패널, amber 액센트 팔레트, 파편 클릭 시 목록 부분 렌더(스크롤 유지).
+
+### Fixed
+- Docker 이미지에 SKILL.md가 포함되어 컨테이너에서 `get_skill_guide`가 동작한다.
+
+## [4.8.0] - 2026-07-04
+
+### Added
+- content 입력 길이 상한 4000자 도입: `remember`·`batch_remember` 항목·`amend`의 `content`가 이를 초과하면 JSON-RPC -32602 에러로 거부한다. 파편 유형별 저장 절삭(episode 1000자, 그 외 300자)은 그 이전 단계로 그대로 유지되며, `batch_remember`는 초과 항목만 실패 처리하고 나머지 배치는 계속 진행한다.
+
+### Changed
+- 패턴 기반 캐시 무효화(`invalidateCacheByPattern`)를 `KEYS` 대신 Redis `SCAN` 커서 순회(`COUNT 500`, 순회 상한)로 전환.
+- 로컬 임베딩(transformers provider) 초기화를 모델별 싱글톤으로 단일화해 동시 중복 로딩을 방지하고, 추론을 FIFO 큐로 직렬화. 배치 임베딩(`embedBatch`)은 청크 단위 텍스트 배열을 파이프라인에 1회 추론으로 전달한다.
+- 마이그레이션 SQL 파일을 `lib/memory/migrations/` 디렉토리로 이동. `npm run migrate` 동작은 변경 없음.
+- `lib/memory/` 하위를 `read/`·`write/`·`consolidate/`·`link/`·`signals/`·`processors/`·`embedding/` 서브디렉토리 체계로 재배치.
 
 ## [4.7.0] - 2026-06-20
 

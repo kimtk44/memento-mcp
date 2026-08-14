@@ -15,14 +15,38 @@
 
 import { getPrimaryPool }                                     from "../lib/tools/db.js";
 import { EMBEDDING_DIMENSIONS, EMBEDDING_PROVIDER, EMBEDDING_MODEL } from "../lib/config.js";
+import { getSchedulerRegistry } from "../lib/scheduler-registry.js";
+import { resolveEmbeddingColumnSpec, embeddingColumnMismatch, fetchEmbeddingColumn }
+  from "../lib/memory/embedding/column-spec.js";
 
-const TABLES = ["fragments", "morpheme_dict"];
+const TABLES           = ["fragments", "morpheme_dict"];
+const SCHEMA_FOR_CHECK = "agent_memory";
 
 export async function checkEmbeddingConsistency() {
   const pool      = getPrimaryPool();
   const mismatches = [];
+  const spec       = resolveEmbeddingColumnSpec(EMBEDDING_DIMENSIONS);
 
   for (const table of TABLES) {
+    /** 1차: 선언 차원 검사 (pg_attribute.atttypmod). 데이터가 전량 NULL이어도
+     *  컬럼 선언과 설정의 불일치를 잡는다 — 행 표본 검사만으로는 이 상태에서
+     *  서버가 기동해 임베딩 쓰기가 전부 실패하며 NULL을 양산한다. */
+    try {
+      const current  = await fetchEmbeddingColumn(pool, SCHEMA_FOR_CHECK, table);
+      const mismatch = current ? embeddingColumnMismatch(current, spec) : null;
+      if (mismatch) {
+        mismatches.push({
+          table,
+          dbDim    : current.declaredDim ?? `${current.udtName}(무차원)`,
+          configDim: EMBEDDING_DIMENSIONS
+        });
+        continue;
+      }
+    } catch {
+      /** 테이블 미존재 → 데이터 표본 검사로 진행 */
+    }
+
+    /** 2차: 실데이터 표본 검사 (선언은 맞지만 이질 데이터가 남은 경우) */
     try {
       const { rows } = await pool.query(`
         SELECT vector_dims(embedding) AS dim
@@ -59,6 +83,14 @@ export async function checkEmbeddingConsistency() {
     `);
     if (rows.length > 0 && rows[0].cnt > 0) {
       console.warn(`[embedding-consistency] morpheme_indexed=false 파편 ${rows[0].cnt}개 (형태소 미인덱싱)`);
+      const reg  = getSchedulerRegistry();
+      const snap = reg.getAll?.() || {};
+      const job  = snap.morphemeBackfill;
+      if (job && job.lastSuccess) {
+        console.warn(`[embedding-consistency] MorphemeBackfill 최근 성공: ${job.lastSuccess} (processed=${job.lastSummary?.processed ?? "?"})`);
+      } else {
+        console.warn("[embedding-consistency] MorphemeBackfill 미실행/기록 없음 — 서버 스케줄러 가동 여부를 확인하세요 (5분 주기, batch 500).");
+      }
     }
   } catch {
     /** migration-035 미적용 환경에서는 컬럼 미존재 → 무시 */

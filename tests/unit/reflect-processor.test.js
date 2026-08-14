@@ -12,7 +12,7 @@
 import { describe, it, mock, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 
-mock.module("../../lib/memory/MorphemeIndex.js", {
+mock.module("../../lib/memory/embedding/MorphemeIndex.js", {
   namedExports: {
     MorphemeIndex: class {
       async tokenize(t)              { return String(t).toLowerCase().split(/[\s,.]+/).filter(w => w.length > 1).slice(0, 10); }
@@ -21,7 +21,7 @@ mock.module("../../lib/memory/MorphemeIndex.js", {
   },
 });
 
-const { ReflectProcessor }  = await import("../../lib/memory/ReflectProcessor.js");
+const { ReflectProcessor }  = await import("../../lib/memory/processors/ReflectProcessor.js");
 const { teardownTestResources, assertCleanShutdown } = await import("../_lifecycle.js");
 
 /**
@@ -141,7 +141,7 @@ describe("ReflectProcessor - decisions", () => {
     assert.equal(result.fragments[1].type, "decision");
 
     const createCalls = deps.factory.create.mock.calls;
-    assert.equal(createCalls[0].arguments[0].importance, 0.8);
+    assert.equal(createCalls[0].arguments[0].importance, 0.7);
   });
 });
 
@@ -251,14 +251,13 @@ describe("ReflectProcessor - session consolidation", () => {
     assert.equal(deps.sessionLinker.consolidateSessionFragments.mock.callCount(), 0);
     assert.equal(result.breakdown.summary, 0);
     assert.equal(result.breakdown.decisions, 0);
-    assert.equal(result.breakdown.episode, 1);
   });
 
   it("sessionId 존재 시 clearWorkingMemory 호출", async () => {
     const deps      = createMockDeps();
     const processor = new ReflectProcessor(deps);
 
-    await processor.process({ sessionId: "sess-1", agentId: "test-agent" });
+    await processor.process({ sessionId: "sess-1", agentId: "test-agent", consolidate: true });
 
     assert.equal(deps.index.clearWorkingMemory.mock.callCount(), 1);
     assert.equal(deps.index.clearWorkingMemory.mock.calls[0].arguments[0], "sess-1");

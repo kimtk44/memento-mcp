@@ -35,17 +35,29 @@
 | COMPRESS_AGE_DAYS | 30 | 기억 압축 대상 비활성 일수 |
 | COMPRESS_MIN_GROUP | 3 | 압축 그룹 최소 크기. 이 수 미만이면 압축하지 않는다 |
 | RERANKER_MODEL | minilm | in-process 모드 ONNX 모델 선택. `minilm` (기본값, ~80MB, 영어 전용) 또는 `bge-m3` (~280MB, 다국어). **비영어권 사용자는 `bge-m3` 권장** — minilm은 영어 MS MARCO 데이터셋으로만 학습되어 한국어 등 비영어 파편 재순위화 품질이 저하됨. `RERANKER_ENABLED`는 별도 환경변수로 존재하지 않음. ONNX 모델 preload 성공 여부(또는 `RERANKER_URL` 설정 여부)로 자동 활성화된다 |
-| FRAGMENT_DEFAULT_LIMIT | 5000 | 새 API 키 생성 시 기본 파편 할당량 (기본: 5000, NULL=무제한) |
+| RERANKER_EXTERNAL_FALLBACK | skip | external 리랭커 3회 연속 실패 시 정책. `skip`(기본): in-process 전환 없이 `RERANKER_EXTERNAL_COOLDOWN_MS` 동안 external 호출 자체를 생략하고 원점수(RRF 순서)를 그대로 반환. `inprocess`: ONNX in-process 모드로 전환(opt-in, 이전 동작) |
+| RERANKER_EXTERNAL_COOLDOWN_MS | 60000 | `RERANKER_EXTERNAL_FALLBACK=skip`일 때의 쿨다운 유지 시간(ms). 창 만료 후 다음 recall이 external을 1건 재시도하며, 성공 시 정상 복귀·실패 시 쿨다운 재진입 |
+| QUOTA_NEAR_LIMIT_MARGIN | 10 | `QuotaChecker.check()`가 FOR UPDATE 정밀 검사로 전환하는 잔여 할당량 임계치. `remaining`이 이 값 이하일 때만 트랜잭션 락을 획득하며, 그 이상이면 10초 TTL 캐시(getUsage) 결과로 락 없이 통과한다 |
 | ENABLE_RECONSOLIDATION | false | ReconsolidationEngine 활성화. true 시 tool_feedback과 contradicts 감지 시 fragment_links weight/confidence를 동적 갱신한다 |
 | ENABLE_SPREADING_ACTIVATION | false | SpreadingActivation 활성화. true 시 recall의 contextText 파라미터로 관련 파편을 선제적 활성화한다. 레이턴시 영향 측정 후 활성화 권장 |
-| ENABLE_PATTERN_ABSTRACTION | false | 패턴 추상화 활성화. 데이터 충분 축적 후 활성화 예정 (현재 미구현) |
+| ENABLE_PATTERN_ABSTRACTION | (미사용) | 패턴 추상화 예약 변수. 현재 코드에서 읽지 않으므로 설정해도 동작에 영향이 없다 |
+| MEMENTO_METRICS_DEFAULT | (없음) | `off`로 설정하면 prom-client 기본 메트릭(CPU·메모리 등) 수집을 생략한다. 그 외 값은 수집 활성 |
+| MEMENTO_ADMIN_METRICS_SAMPLING | (없음) | `off`로 설정하면 admin 콘솔 메트릭 샘플링을 비활성화한다. 그 외 값은 샘플링 활성 |
+| UPDATE_CHECK_DISABLED | false | `true`로 설정 시 신규 버전 확인을 수행하지 않는다 |
+| UPDATE_CHECK_INTERVAL_HOURS | 24 | 신규 버전 확인 주기(시간) |
 | MEMENTO_REMEMBER_ATOMIC | false | true 시 remember()의 quota check + INSERT를 단일 트랜잭션으로 원자화. BEGIN → api_keys FOR UPDATE(quota 재검증) → INSERT → COMMIT 순서로 TOCTOU를 완전 차단. false(기본)는 선제 quota check만 수행하며 동시 요청이 드문 환경에 적합 |
 | MEMENTO_CASE_BACKPROP_ENABLED | false | true 시 CaseRewardBackprop 활성화. case verification 이벤트마다 증거 파편 importance를 자동 역전파. 비활성 시 호출 자체가 no-op(DB·메트릭 영향 0). DAG 일관성 베이스라인 확보 후 활성화 권장 |
 | MEMENTO_STORAGE | pgvector | storage 어댑터 선택. `pgvector`(기본, PgVectorStore) 또는 `sqlite-vec`(SqliteVecStore). 변경 시 서버 재시작 필요 |
+| MEMENTO_KEYWORD_SEMANTIC_FALLBACK | true | `false` 설정 시 text 없는 keywords-only recall의 L3 시맨틱 보조 경로를 비활성화. 활성 시 정규화된 keywords 합성 텍스트 임베딩 1회가 L2와 병렬 수행되어 저장 keywords에 없는 용어도 content 기반으로 회수된다 |
+| MEMENTO_KEYWORD_FALLBACK_TIMEOUT_MS | 1500 | keywords 보조 L3 실행 상한(ms, 100~60000 클램프). 초과 시 빈 결과로 대체하고 searchPath에 `L3kw:timeout`을 남긴다 |
+| MEMENTO_CONTEXT_ANCHOR_LIMIT | 10 | context 응답에 항상 포함되는 앵커(isAnchor) 파편의 최대 개수. 1~30 범위로 클램프되며 파싱 실패 시 10. 앵커는 tokenBudget 절삭 대상이 아니므로 이 개수 상한이 유일한 주입량 제한이다 |
 | MEMENTO_RECALL_MIN_SIM_FLOOR | (없음) | `SearchParamAdaptor.getMinSimilarity`가 반환하는 적응형 임계값에 옵트인 하한을 강제. 예: `0.45` 설정 시 학습값이 0.45 미만이어도 0.45 반환. 미설정 시 기존 동작 그대로 |
 | MIGRATION_LINT_FROM | (없음) | `npm run lint:migrations` 검사 cutoff override. 지정 마이그레이션 번호 이후분만 검사. 미설정 시 전체 검사 |
 | MEMENTO_MORPHEME_TOKENIZER | local | 형태소 토크나이저 경로 선택. `local`: garu-ko(한글)·natural PorterStemmer(영어)·@node-rs/jieba(중국어)·kuromoji(일본어) 로컬 CPU 분석기 사용(기본). `llm`: LLM 서브프로세스 경로(`MorphemeIndex._tokenizeViaLLM()`)로 전환. |
 | MEMENTO_ENABLE_KUROMOJI | true | `false` 설정 시 kuromoji 일본어 분석기 로딩 생략. 일본어 파편이 없는 환경에서 상주 메모리 약 269MB 절감. `config/memory.js` `morphemeIndex.enableKuromoji`와 동기화됨. |
+| MEMENTO_FEEDBACK_SAMPLING | true | remember·amend·forget 성공 응답에 `feedback_sampled` 힌트를 확률적으로 동봉(`config/memory.js` `feedback.sampling.enabled`). `false` 시 힌트 부착 자체를 생략한다 |
+| MEMENTO_SPLIT_SUBJECT_GATE | true | 분할 자식이 부모의 주어 앵커를 하나도 담지 못하면 해당 자식을 폐기(`fragmentSplit.requireSubjectAnchor`). `false` 시 주어 검사를 건너뛴다 |
+| MEMENTO_SPLIT_MODALITY_GATE | true | 분할 자식이 부모에 없던 양상(예정·의도·추측·당위)을 도입하면 해당 자식을 폐기(`fragmentSplit.rejectIntroducedModality`). `false` 시 양상 검사를 건너뛴다 |
 
 #### CLI 원격 접속
 
@@ -85,6 +97,8 @@ Gemini CLI 외 15개 provider로 자동 fallback 가능. 기본값에서 기존 
 |------|--------|------|
 | LLM_PRIMARY | gemini-cli | 주 provider 이름. gemini-cli는 env 설정 불필요 |
 | LLM_FALLBACKS | (없음) | JSON 배열. 각 원소에 provider/apiKey/model/baseUrl/timeoutMs/extraHeaders 지정 |
+| LLM_PROVIDER_TIMEOUT_MS | 60000 | provider 1회 호출 타임아웃(ms). 값을 명시했을 때만 호출자가 넘긴 타임아웃을 대체한다(미설정 시 각 호출 경로의 자체 값 유지) |
+| LLM_CHAIN_TIMEOUT_MS | 0 | 체인 전체 데드라인(ms). `0`이면 데드라인 없음. 초과 시 `chain deadline exceeded after Nms` 오류로 중단 |
 
 ##### Circuit Breaker
 
@@ -111,6 +125,7 @@ REDIS_ENABLED=true면 Redis에 상태 저장, 아니면 in-memory.
   "ollama": 16,
   "openai|https://token-plan-sgp.xiaomimimo.com/v1|mimo-v2-pro": 8,
   "gemini-cli": 1,
+  "agy-cli": 1,
   "copilot-cli": 1,
   "codex-cli": 1,
   "qwen-cli": 1,
@@ -130,7 +145,16 @@ REDIS_ENABLED=true면 Redis에 상태 저장, 아니면 in-memory.
 
 ##### 지원 Provider 목록
 
-gemini-cli, anthropic, openai, google-gemini-api, groq, openrouter, xai, ollama, vllm, deepseek, mistral, cohere, zai, **codex-cli**, **copilot-cli**, **qwen-cli**
+gemini-cli, **agy-cli**, anthropic, openai, google-gemini-api, groq, openrouter, xai, ollama, vllm, deepseek, mistral, cohere, zai, **codex-cli**, **copilot-cli**, **qwen-cli**, **opencode-cli**
+
+**agy-cli**: Google Antigravity CLI(`agy`)를 `--print --output-format text --mode plan --sandbox` 제약으로 실행한다. AnchorMind의 LLM 변환은 JSON 응답만 사용하므로, provider는 파일 수정과 도구 승인을 하지 않는 plan/sandbox 경로만 사용한다. Antigravity 로그인과 `agy` 바이너리가 필요하며, `model`, `timeoutMs` 설정은 실제 CLI 호출에 전달된다:
+```json
+[{"provider": "agy-cli", "model": "<agy models에서 확인한 모델명>", "timeoutMs": 40000}]
+```
+
+실제 CLI는 `--print` 뒤의 모든 인자를 프롬프트로 처리하므로, AnchorMind는 `--output-format text --mode plan --sandbox [--model MODEL] --print PROMPT` 순서로 실행한다.
+
+macOS launchd로 서버를 실행하는 경우 셸 프로필을 읽지 않으므로, plist의 `PATH`에 `~/.local/bin`을 명시해 `agy`를 찾을 수 있게 해야 한다.
 
 **codex-cli**: `codex exec --skip-git-repo-check --sandbox read-only --output-last-message FILE` 명령을 실행한다. `OPENAI_API_KEY` 또는 Codex CLI 설정 파일로 인증한다. `LLM_FALLBACKS`의 `model`, `timeoutMs` 설정이 provider config를 통해 실제 CLI 호출까지 전달된다:
 ```json
@@ -148,11 +172,13 @@ gemini-cli, anthropic, openai, google-gemini-api, groq, openrouter, xai, ollama,
 [{"provider": "qwen-cli", "model": "qwen-max"}]
 ```
 
-**geminiTimeoutMs**: `config/memory.js`의 `morphemeIndex.geminiTimeoutMs` 값이 15000ms에서 **60000ms**로 상향되었다. Gemini CLI 및 Ollama Cloud 환경에서 실측 응답 지연이 20~40s에 달해 반복적인 "all LLM providers failed" 오류가 발생하던 문제를 해소하기 위한 조정이다.
+**geminiTimeoutMs**: `config/memory.js`의 `morphemeIndex.geminiTimeoutMs` 기본값은 **60000ms**이다. Gemini CLI 및 Ollama Cloud 환경에서는 응답 지연이 20~40s에 달할 수 있어 "all LLM providers failed" 오류를 피하기 위해 이 값으로 설정되어 있다.
 
 이 값은 `MEMENTO_MORPHEME_TOKENIZER=llm` 설정 시 `MorphemeIndex._tokenizeViaLLM()` 내부의 `geminiCLIJson(userPrompt, { timeoutMs: cfg.geminiTimeoutMs })` 호출에 전달된다. 기본값(`MEMENTO_MORPHEME_TOKENIZER=local`)에서는 로컬 분석기(MorphemeTokenizer)를 사용하므로 이 값은 참조되지 않는다. LLM 경로에서 tokenize가 실패하면 형태소 추출 결과가 없으므로 L3 morpheme 검색(recall의 전문 검색 경로)이 비활성화된 것과 동일하게 동작한다 (`_fallbackTokenize` 로 graceful degrade).
 
-**GEMINI_TIMEOUT_MS**: `lib/memory/AutoReflect.js`의 LLM chain 호출 timeout은 30,000 ms로 고정된다(`GEMINI_TIMEOUT_MS = 30_000` 코드 상수, `process.env` 참조 없음). 값을 변경하려면 해당 파일의 상수를 직접 수정해야 한다. MorphemeIndex의 `geminiTimeoutMs`(config/memory.js, 기본 60000)와 별개임에 주의한다.
+**형태소 보조 검색(morphemeIndex.minSimilarity / fallbackThreshold / fallbackLimit)**: L3 시맨틱 검색과 병렬로 형태소 평균 벡터 기반 보조 검색을 수행한다. 형태소 평균 벡터는 문장 임베딩보다 코사인 유사도가 체계적으로 낮으므로 전용 임계값 `morphemeIndex.minSimilarity`(기본 0.15)를 사용하며, `semanticSearch.minSimilarity`(기본 0.4)를 재사용하지 않는다. 기본 L3 결과 수가 `fallbackThreshold`(기본 5) 이하일 때만 보조 결과를 채택하고, 채택 시 `fallbackLimit`(기본 5)개까지 병합한다. 프로브 자체는 병렬 실행되므로 채택 여부가 응답 지연에 영향을 주지 않는다.
+
+**GEMINI_TIMEOUT_MS**: `lib/memory/processors/AutoReflect.js`의 LLM chain 호출 timeout은 30,000 ms로 고정된다(`GEMINI_TIMEOUT_MS = 30_000` 코드 상수, `process.env` 참조 없음). 값을 변경하려면 해당 파일의 상수를 직접 수정해야 한다. MorphemeIndex의 `geminiTimeoutMs`(config/memory.js, 기본 60000)와 별개임에 주의한다.
 
 **buildChain 순서 결정 로직** (`lib/llm/index.js:38–68`): `LLM_PRIMARY` → `LLM_FALLBACKS` 선언 순서로 entries 배열을 구성한 뒤, `seen` Set으로 중복 provider를 제거하고, 각 provider의 `isAvailable()` 체크 성공 여부로 chain에 포함 여부를 결정한다. `LLM_PRIMARY`가 `LLM_FALLBACKS` 목록에도 있으면 fallback의 config 객체가 우선 사용된다. `isAvailable()` 실패 시 해당 provider는 체인에서 제외되고 다음 provider로 즉시 넘어간다. 결과적으로 chain 순서는 환경변수 선언 순서와 1:1 대응한다.
 
@@ -174,7 +200,7 @@ OAuth 토큰 TTL은 세션 TTL과 연동된다.
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
 | SSE_HEARTBEAT_INTERVAL_MS | 25000 | SSE heartbeat ping 전송 간격 (ms). 클라이언트 연결 유지 확인용 |
-| SSE_MAX_HEARTBEAT_FAILURES | 3 | 연속 heartbeat 전송 실패 허용 횟수. 초과 시 세션 자동 종료. write backpressure 및 네트워크 오류 감지 |
+| SSE_MAX_HEARTBEAT_FAILURES | 10 | 연속 heartbeat 전송 실패 허용 횟수. 초과 시 세션 자동 종료. write backpressure 및 네트워크 오류 감지 |
 | SSE_RETRY_MS | 5000 | SSE 재연결 대기 시간 (ms). 클라이언트 `retry:` 필드로 전달 |
 | MCP_IDLE_REFLECT_HOURS | 24 | 세션 idle 중간 autoReflect 임계 시간 (시간). 이 시간 이상 비활성 상태인 세션에 주기 정리 시 중간 reflect를 실행하여 기억 손실을 방지. 0 설정 시 사실상 비활성화(단, 0h 초과 조건이므로 매 정리 주기마다 실행됨) |
 
@@ -207,6 +233,12 @@ POSTGRES_* 접두어가 DB_* 접두어보다 우선한다. 두 형식을 혼용�
 | 자동 재처리 | 없음 (큐 유실 시 재처리 없음) |
 
 이 기능은 `REDIS_ENABLED=true`일 때만 비동기로 동작한다. `REDIS_ENABLED=false` 환경에서는 `async=true` 파라미터를 전달해도 동기 모드로 처리된다.
+
+**총 문자수 게이트**: `fragments` 배열의 content 총 문자수가 `BATCH_REMEMBER_MAX_TOTAL_CHARS`(기본 200,000자)를 초과하면 sync/async 분기 이전에 배치 요청 전체가 즉시 거부된다. 항목별 4000자 상한(초과 항목만 개별 실패)과는 별개의 상한이며, 대량 배치의 처리 비용을 사전에 제한한다.
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| BATCH_REMEMBER_MAX_TOTAL_CHARS | 200000 | `batch_remember` fragments 배열 content 총 문자수 상한 |
 
 ### Redis
 
@@ -241,8 +273,12 @@ POSTGRES_* 접두어가 DB_* 접두어보다 우선한다. 두 형식을 혼용�
 | EMBEDDING_DIMENSIONS | (provider 기본값) | 임베딩 벡터 차원 수. DB 스키마의 vector 차원과 일치해야 한다 |
 | EMBEDDING_SUPPORTS_DIMS_PARAM | (provider 기본값) | dimensions 파라미터 지원 여부 override (`true`\|`false`) |
 | GEMINI_API_KEY | (없음) | Google Gemini API 키. `EMBEDDING_PROVIDER=gemini` 시 사용 |
-| CF_ACCOUNT_ID | (없음) | Cloudflare 계정 ID. `EMBEDDING_PROVIDER=cloudflare` 시 필수 |
-| CF_API_TOKEN | (없음) | Cloudflare API 토큰. `EMBEDDING_PROVIDER=cloudflare` 시 필수 |
+| CF_ACCOUNT_ID | (없음) | Cloudflare 계정 ID. `EMBEDDING_PROVIDER=cloudflare` 시 필수. 미설정 시 `CLOUDFLARE_ACCOUNT_ID`를 대체 이름으로 읽는다 |
+| CF_API_TOKEN | (없음) | Cloudflare API 토큰. `EMBEDDING_PROVIDER=cloudflare` 시 필수. 미설정 시 `CLOUDFLARE_API_TOKEN`을 대체 이름으로 읽는다 |
+| EMBEDDING_TIMEOUT_MS | 8000 | 임베딩 API 호출 1건당 절대 타임아웃(ms). `AbortSignal.timeout()`으로 적용되며 전체 데드라인 역할을 한다 |
+| EMBEDDING_MAX_RETRIES | 0 | OpenAI 호환 클라이언트의 자체 재시도 횟수. per-call 타임아웃이 이미 절대 데드라인이므로 재시도와 중첩되면 세마포어 점유 시간이 timeout × 재시도로 누적되는 것을 막기 위해 기본 0 |
+| EMBEDDING_CONCURRENCY | 6 | 프로세스 전역 임베딩 호출 동시성 상한. 임베딩 서비스 지연이 전체 요청 큐로 전파되는 것을 차단하는 세마포어 슬롯 수 |
+| EMBEDDING_SEM_WAIT_MS | 3000 | 임베딩 세마포어 슬롯 대기 타임아웃(ms). 초과 시 호출이 reject되고 `mcp_embedding_semaphore_wait_exceeded_total` 카운터가 증가한다 |
 
 ---
 
@@ -364,8 +400,10 @@ export const MEMORY_CONFIG = {
     maxDeletePerCycle: 30        // 1회 최대 삭제 건수
   },
   semanticSearch: {
-    minSimilarity: 0.2,          // L3 pgvector 검색 최소 유사도 (기본 0.2)
-    limit        : 10            // L3 반환 최대 건수
+    minSimilarity  : 0.4,        // L3 pgvector 검색 최소 유사도 (기본 0.4)
+    limit          : 30,         // L3 반환 최대 건수
+    keywordFallback: true,       // text 없는 keywords-only 쿼리에서 L3 시맨틱 보조 실행 (env MEMENTO_KEYWORD_SEMANTIC_FALLBACK=false로 비활성)
+    keywordFallbackTimeoutMs: 1500 // keywords 보조 L3 실행 상한 (env MEMENTO_KEYWORD_FALLBACK_TIMEOUT_MS)
   },
   temperatureBoost: {
     warmWindowDays     : 7,      // 이 기간 내 접근 파편에 warmBoost 적용
@@ -433,10 +471,38 @@ LLM 재작성이 수반되어 파편 내용을 변경할 수 있는 3개 stage�
 | `minChildLength` | `20` | 이 길이 미만 자식 단편은 품질 게이트에서 폐기 |
 | `excludeMetaTopics` | `["session_reflect","consolidation","reflection"]` | 분할 제외 topic 목록 |
 | `failureBackoffHours` | `24` | 분할 실패 후 이 시간 동안 재선정 제외 (`split_attempt_failed_at` 컬럼, migration-036) |
+| `requireSubjectAnchor` | `true` | 부모의 주어 앵커를 하나도 담지 못한 자식을 폐기. ENV: `MEMENTO_SPLIT_SUBJECT_GATE` |
+| `rejectIntroducedModality` | `true` | 부모에 없던 양상을 도입한 자식을 폐기. ENV: `MEMENTO_SPLIT_MODALITY_GATE` |
+| `subjectAnchorMax` | `12` | 부모 원문에서 추출할 주어 앵커 상한 |
 
 분할 자식 품질 게이트(`split-gate.js`): 최소 길이(`minChildLength`) 미달·대체 문자(`�`) 포함·CJK/가나 혼입(한글 본문 기준)·대명사/메타 시작 토큰이면 reject. fact 타입 자식의 importance가 클램프 후 0.4 미만이면 저장 차단.
 
+주어 앵커 게이트(`requireSubjectAnchor`): 부모 원문에서 형태소 분석기의 고유명사·외국어·한자 토큰과 코드 식별자(camelCase·PascalCase·snake_case), 라틴+한글 혼합 토큰(A사, K팀)을 최대 `subjectAnchorMax`개까지 추출한 뒤, 이 중 어느 것도 담지 못한 자식을 폐기하고 `memento_consolidate_split_skipped_total{reason="subject_loss"}`를 증가시킨다. 한글 1자 토큰은 우연 일치가 잦아 앵커로 쓰지 않는다. 앵커를 하나도 추출하지 못한 경우에만 판정 근거가 없으므로 통과시킨다(fail-open). 형태소 분석기가 로드되지 않아도 코드 식별자·라틴+한글 혼합 토큰은 정규식으로 계속 추출되므로, 분석기 미로드가 곧 게이트 비활성을 뜻하지는 않는다.
+
+양상 표류 게이트(`rejectIntroducedModality`): 부모와 자식의 양상 패밀리(future·intention·conjecture·obligation)를 대조하여, 부모에 없던 패밀리를 자식이 새로 도입하면 폐기하고 `memento_consolidate_split_skipped_total{reason="modality_drift"}`를 증가시킨다. 같은 패밀리 안의 표현 교체("제출할 예정이다" → "제출할 것이다")는 재작성으로 허용하며, 완료 사실이 예정·추측·당위로 바뀌는 경우만 차단한다.
+
+두 게이트는 자식 단위로 판정되므로 한 부모에서 여러 건이 누적될 수 있다. 파편 단위로 1회 기록되는 `low_yield`·`anchor_loss` 등과 같은 분모로 비교하지 않는다.
+
+자식 파편의 `keywords`는 `remember` 경로와 동일하게 자식 본문에서 추출된다(`FragmentFactory.extractKeywords`). 부모의 keywords를 복사하지 않는다.
+
 Phase 1(gate-only)에서 통과 자식 수 < `minItems`이면 DB insert 없이 해당 파편의 `split_attempt_failed_at`을 갱신하고 `memento_consolidate_split_skipped_total{reason="low_yield"}`를 증가시킨다. 분할 성공 시 원본은 `valid_to = NOW()`, `ttl_tier = 'cold'`, `importance = GREATEST(0.2, importance × 0.3)` 처리된다.
+
+앵커 커버리지 검사: 분할은 원문을 자르지 않고 LLM이 다시 쓰므로 명제 하나가 통째로 누락될 수 있다. 자식 저장 직전에 원문의 수치 앵커(날짜·금액·비율·측정값)가 자식 합집합에 모두 남아 있는지 대조하고, 하나라도 빠지면 자식을 저장하지 않고 원본을 그대로 둔다. 이때 `split_attempt_failed_at`을 갱신하고 `memento_consolidate_split_skipped_total{reason="anchor_loss"}`를 증가시킨다. 날짜 `2026-07-15`는 `2026`/`07`/`15`로, 범위 `75~85`는 `75`/`85`로 분해 비교하므로 표기가 바뀌어도 구성 숫자가 남으면 보존으로 판정한다. 자릿수 구분자는 무시하며, 한 자리 숫자와 수치가 전혀 없는 원문은 판정 대상에서 제외한다.
+
+### feedback.sampling
+
+쓰기 계열 도구 응답에 `tool_feedback` 요청 힌트를 확률적으로 동봉한다. 자발적 피드백만으로는 표본이 성공 사례에 편중되므로, 저장·수정·삭제 직후 일정 확률로 평가를 요청한다. `config/memory.js`의 `feedback.sampling` 블록에서 설정한다.
+
+| 키 | 기본값 | 설명 |
+|-|-|-|
+| `enabled` | `true` | 힌트 동봉 활성화. ENV: `MEMENTO_FEEDBACK_SAMPLING` |
+| `rates.remember` | `0.10` | remember 성공 응답의 힌트 표집 확률 |
+| `rates.amend` | `0.25` | amend 성공 응답의 힌트 표집 확률 |
+| `rates.forget` | `0.25` | forget 성공 응답의 힌트 표집 확률 |
+| `maxHintsPerSession` | `2` | 세션당 힌트 상한. 초과 시 무음 |
+| `cooldownSeconds` | `900` | 직전 힌트 이후 재발행 금지 시간 |
+
+recall은 자체 힌트 경로를 이미 갖고 있어 `rates`에서 제외된다. 상한·쿨다운 카운터는 Redis(`frag:fbhint:count:*`, `frag:fbhint:cd:*`)에 보관하며, Redis 미가용 시에는 상한·쿨다운 없이 확률 판정만 적용된다(fail-open). `remember(dryRun=true)`·`forget(dryRun=true)`과 실제 갱신이 없었던 `amend`는 표집 대상이 아니다. 표집된 응답에는 `_meta.hints[0]`에 `signal: "feedback_sampled"`와 `args: {tool_name, trigger_type: "sampled"}`가 실린다.
 
 ### SearchParamAdaptor (자동 검색 파라미터 학습)
 
@@ -450,6 +516,8 @@ SearchParamAdaptor는 별도 환경변수 없이 자동으로 동작한다. `con
 | step | 0.01 | 조정 보폭 (대칭) |
 
 학습 데이터는 `agent_memory.search_param_thresholds` 테이블에 저장된다 (migration-029).
+
+`topic` 정확일치 필터로 0건이 된 검색은 학습 표본에서 제외된다. topic은 전 계층에서 정확일치로 평가되므로 오기 한 글자에도 모든 계층이 동시에 0건이 되고, 이를 학습에 넣으면 minSimilarity 하향 압력만 남는다. `search_events` 기록은 그대로 유지되며 제외 대상은 SearchParamAdaptor 학습뿐이다. 이 경우 recall은 근접 topic 후보를 조회해 `_meta.hints`에 `topic_mismatch`를 실어 재검색을 유도한다(`TopicResolver`).
 
 ### 런타임 검증
 
@@ -786,37 +854,42 @@ EMBEDDING_DIMENSIONS=768
 | 001 | migration-001-temporal.sql | Temporal (valid_from/valid_to, searchAsOf) |
 | 002 | migration-002-decay.sql | 지수 감쇠 (last_decay_at) |
 | 003 | migration-003-api-keys.sql | api_keys + api_key_usage 테이블 |
-| 004 | migration-004-key-id.sql | fragments.key_id 컬럼 + FK |
-| 005 | migration-005-gc-columns.sql | GC 컬럼 |
-| 006 | migration-006-superseded.sql | superseded_by 제약 |
-| 007 | migration-007-link-weight.sql | link weight |
-| 008 | migration-008-morpheme.sql | 형태소 사전 |
-| 009 | migration-009-co-retrieved.sql | co_retrieved |
-| 010 | migration-010-ema.sql | EMA activation score |
+| 004 | migration-004-key-isolation.sql | fragments.key_id 컬럼 (API 키 기반 기억 격리) |
+| 005 | migration-005-gc-columns.sql | GC 정책 인덱스 (utility_score, access_count) |
+| 006 | migration-006-superseded-by-constraint.sql | fragment_links CHECK에 superseded_by 추가 |
+| 007 | migration-007-link-weight.sql | fragment_links.weight 컬럼 |
+| 008 | migration-008-morpheme-dict.sql | 형태소 사전 테이블 (morpheme_dict) |
+| 009 | migration-009-co-retrieved.sql | fragment_links CHECK에 co_retrieved 추가 |
+| 010 | migration-010-ema-activation.sql | fragments.ema_activation/ema_last_updated 컬럼 |
 | 011 | migration-011-key-groups.sql | key groups (그룹별 파편 공유) |
 | 012 | migration-012-quality-verified.sql | quality_verified |
 | 013 | migration-013-search-events.sql | search_events 테이블 |
-| 014 | migration-014-ttl.sql | TTL 단기 계층 |
+| 014 | migration-014-ttl-short.sql | TTL 단기 계층 |
 | 015 | migration-015-created-at-index.sql | created_at 인덱스 |
 | 016 | migration-016-agent-topic-index.sql | agent/topic 인덱스 |
 | 017 | migration-017-episodic.sql | episodic 타입 (1000자, context_summary, session_id) |
 | 018 | migration-018-fragment-quota.sql | fragment quota (기본 5000개) |
-| 019 | migration-019-hnsw.sql | HNSW ef_construction 64→128, ef_search=80 |
-| 020 | migration-020-search-latency.sql | search_events 레이어 레이턴시 컬럼 |
-| 021 | migration-021-oauth.sql | OAuth clients 테이블 |
-| 022 | migration-022-temporal-link-check.sql | temporal 링크 타입 CHECK 제약 |
-| 023 | migration-023-link-weight-real.sql | fragment_links.weight integer→real |
+| 019 | migration-019-hnsw-tuning.sql | HNSW ef_construction 128, ef_search=80 |
+| 020 | migration-020-search-layer-latency.sql | search_events 레이어 레이턴시 컬럼 |
+| 021 | migration-021-oauth-clients.sql | OAuth clients 테이블 |
+| 022 | migration-022-temporal-link-type.sql | temporal 링크 타입 CHECK 제약 |
+| 023 | migration-023-link-weight-float.sql | fragment_links.weight real 타입 (float 가중치) |
 | 024 | migration-024-workspace.sql | fragments.workspace VARCHAR(255) NULL |
-| 025 | migration-025-case-columns.sql | fragments에 case_id + structured episode 컬럼 |
+| 025 | migration-025-case-id-episode.sql | fragments에 case_id + structured episode 컬럼 |
 | 026 | migration-026-case-events.sql | case_events + case_event_edges + fragment_evidence 테이블 |
-| 028 | migration-028-composite-indexes.sql | 복합 인덱스: (agent_id, topic, created_at DESC) topic fallback 검색 최적화, (key_id, agent_id, importance DESC) WHERE valid_to IS NULL API 키 격리 조회 최적화. migration-016의 idx_frag_agent_topic을 대체한다 |
-| 030 | migration-030-search-param-thresholds-key-text.sql | search_param_thresholds.key_id 타입 INTEGER→TEXT 변환. fragments.key_id가 migration-027부터 TEXT(UUID)로 전환되어 SearchParamAdaptor 적응형 학습이 무력화되던 버그 수정. 기존 sentinel -1 → '-1' 문자열 보존 |
-| 031 | migration-031-content-hash-per-key.sql | content_hash 전역 UNIQUE 인덱스(idx_frag_hash) 폐기 후 partial unique index 2개로 전환하여 크로스 테넌트 ON CONFLICT 경로 차단. master(key_id IS NULL) 전용 `uq_frag_hash_master`, API key(key_id IS NOT NULL) 전용 복합 `uq_frag_hash_per_key` |
+| 027 | migration-027-v25-reconsolidation-episode-spreading.sql | search_events/case_events key_id 타입, fragment_links 재통합 컬럼 + link_reconsolidations 테이블, case_events idempotency_key, fragments.keywords GIN 인덱스 |
+| 028 | migration-028-v253-improvements.sql | (agent_id, topic, created_at DESC) 복합 인덱스, (key_id, agent_id, importance DESC) WHERE valid_to IS NULL 부분 인덱스. search_events.rrf_used·fragments.superseded_by 컬럼 제거 |
+| 029 | migration-029-search-param-thresholds.sql | search_param_thresholds 테이블 (SearchParamAdaptor 온라인 학습 저장소) |
+| 030 | migration-030-search-param-thresholds-key-text.sql | search_param_thresholds.key_id 타입을 fragments.key_id와 동일한 TEXT로 통일. sentinel 값은 문자열 '-1'로 저장 |
+| 031 | migration-031-content-hash-per-key.sql | content_hash partial unique index 2개로 크로스 테넌트 ON CONFLICT 경로 차단. master(key_id IS NULL) 전용 `uq_frag_hash_master`, API key(key_id IS NOT NULL) 전용 복합 `uq_frag_hash_per_key` |
 | 032 | migration-032-fragment-claims.sql | Symbolic Memory Layer fragment_claims 테이블 |
 | 033 | migration-033-symbolic-hard-gate.sql | api_keys.symbolic_hard_gate BOOLEAN (symbolic hard gate opt-in) |
-| 034 | migration-034-api-keys-default-mode.sql | api_keys.default_mode TEXT NULL — Mode preset 키 단위 기본값 |
-| 035 | migration-034-v2.16.0-bundle-fragments-affect.sql | fragments.affect TEXT DEFAULT 'neutral' CHECK 6-enum |
-| 036 | migration-036-split-attempt-failed-at.sql | `fragments.split_attempt_failed_at TIMESTAMPTZ NULL` 컬럼 + partial index. splitLongFragments 분할 실패 backoff 구현 |
+| 034 | migration-034-v2.16.0-bundle.sql | api_keys.default_mode TEXT NULL (Mode preset 키 단위 기본값), fragments.affect TEXT DEFAULT 'neutral' CHECK 6-enum, fragments.idempotency_key TEXT NULL + partial UNIQUE 2종 |
+| 035 | migration-035-morpheme-indexed.sql | fragments.morpheme_indexed BOOLEAN NOT NULL DEFAULT false + 부분 인덱스, 기존 파편 백필 |
+| 036 | migration-036-split-attempt-failed-at.sql | `fragments.split_attempt_failed_at TIMESTAMPTZ NULL` 컬럼 + partial index. splitLongFragments 분할 실패 backoff에 사용 |
+| 037 | migration-037-hnsw-index-rename.sql | HNSW 인덱스명 정합화 (idx_frag_embedding), ef_construction=128 적용 |
+| 038 | migration-038-fragment-versions-case-fields.sql | `fragment_versions`에 `resolution_status`·`outcome`·`phase` 컬럼 추가. amend 직전 케이스 상태를 이력에 보존 |
+| 039 | migration-039-feedback-instrumentation.sql | `task_feedback`에 `outcome`·`evaluator`·`evidence`·`unmet_requirements` 컬럼 + `outcome`·`evaluator` CHECK 제약, `tool_feedback`에 `irrelevance_reason` 컬럼 + CHECK 제약 + partial index `idx_tf_irrelevance`. 기존 행은 백필하지 않으므로 NULL이 "미보고"를 뜻한다 |
 
 ---
 

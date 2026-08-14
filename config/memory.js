@@ -6,6 +6,15 @@
  * 수정일: 2026-05-22 (morphemeIndex kanaMinChars, enableKuromoji 추가)
  */
 
+/**
+ * 환경 변수를 정수로 파싱한다. 파싱 실패 시 기본값, 성공 시 min~max 클램프.
+ */
+function envInt(name, def, min, max) {
+  const raw = Number.parseInt(process.env[name] ?? "", 10);
+  if (Number.isNaN(raw)) return def;
+  return Math.min(max, Math.max(min, raw));
+}
+
 export const MEMORY_CONFIG = {
   /** 복합 랭킹 가중치 (합계 1.0) */
   ranking: {
@@ -21,6 +30,13 @@ export const MEMORY_CONFIG = {
     lexicalLinkedMultiplier  : 0.5,  // includeLinks 파편의 lexical 가중치 감쇠
     lexicalSaturation        : 8,    // lexicalMatchScore log 정규화 분모
     unrerankedBaseDiscount   : 0.85, // rerankerScore 미보유 파편 base에 적용하는 페널티 (reranking 미검증 신호)
+    /** keywords-only 정확 일치 가산. semantic 최대 기여(semanticWeight)보다 크게 잡아
+     *  유사도 분포가 극단적인 임베딩 환경에서도 정확 히트의 우위를 보장한다. */
+    exactKeywordBoost: 0.35,
+    /** 절단 슬롯 보장: exact 히트는 budget의 exactSlotShare까지, L3kw supplement는
+     *  semanticSlotShare까지 우선 확보한다(둘 다 무제한 아님 — 일반 키워드 독점 방지). */
+    exactSlotShare: 0.5,
+    semanticSlotShare: 0.25,
   },
   /** stale 검증 주기 (일) */
   staleThresholds: {
@@ -47,9 +63,10 @@ export const MEMORY_CONFIG = {
   },
   /** Reciprocal Rank Fusion 검색 설정 */
   rrfSearch: {
-    k                : 60,    // RRF 상수 (높을수록 상위 랭크 부스트 감소)
-    l1WeightFactor   : 2.0,   // L1(Redis) 결과 가중치 배수
-    graphWeightFactor: 1.5    // L2.5 그래프 이웃 가중치 배수
+    k                     : 60,    // RRF 상수 (높을수록 상위 랭크 부스트 감소)
+    l1WeightFactor        : 2.0,   // L1(Redis) 결과 가중치 배수
+    graphWeightFactor     : 1.5,   // L2.5 그래프 이웃 가중치 배수
+    candidateMinImportance: 0.1    // RRF 후보 저중요도 컷오프 하한 (비-앵커)
   },
   /** L2.5 그래프 이웃 검색 설정 */
   graph: {
@@ -80,6 +97,7 @@ export const MEMORY_CONFIG = {
   },
   /** 컨텍스트 주입 설정 */
   contextInjection: {
+    maxAnchorFragments : envInt("MEMENTO_CONTEXT_ANCHOR_LIMIT", 10, 1, 30),
     maxCoreFragments   : 15,
     maxWmFragments     : 10,
     typeSlots          : {
@@ -112,14 +130,20 @@ export const MEMORY_CONFIG = {
   /** session_reflect 파편 정리 정책 */
   reflectionPolicy: {
     maxAgeDays       : 30,
-    maxImportance    : 0.3,
+    maxImportance    : 0.55,
     keepPerType      : 5,
     maxDeletePerCycle: 30
   },
-  /** 시맨틱 검색 설정. minSimilarity는 SearchParamAdaptor가 적응형으로 조정한다. */
+  /** 시맨틱 검색 설정. minSimilarity는 SearchParamAdaptor가 적응형으로 조정한다.
+   *  0.40: 12쿼리 골드셋 실측에서 상위5 유용건 최대(0.5는 자유 회상 질의 침묵, 0.35는 노이즈가 이득 상쇄). */
   semanticSearch: {
-    minSimilarity: 0.5,
-    limit        : 30
+    minSimilarity  : 0.4,
+    limit          : 30,
+    /** text 없는 keywords-only 쿼리에서 L3 시맨틱 보조 실행 여부.
+     *  L1/L2는 저장 keywords 배열만 보므로 content 매칭은 이 경로가 유일하다. */
+    keywordFallback: process.env.MEMENTO_KEYWORD_SEMANTIC_FALLBACK !== "false",
+    /** keywords 보조 L3 실행 상한(ms). 초과 시 빈 배열로 대체해 응답 지연을 차단한다. */
+    keywordFallbackTimeoutMs: envInt("MEMENTO_KEYWORD_FALLBACK_TIMEOUT_MS", 1500, 100, 60000)
   },
   /** 파편 GC 정책 */
   gc: {
@@ -219,7 +243,29 @@ export const MEMORY_CONFIG = {
     timeoutMs        : 30_000, // 파편당 LLM 타임아웃
     minChildLength     : 20,   // 이 길이 미만 자식 단편은 폐기
     excludeMetaTopics  : ["session_reflect", "consolidation", "reflection"], // 분할 제외 메타 토픽
-    failureBackoffHours: 24    // 분할 실패 후 이 시간 동안 재선정 제외 (무한 재분할 차단)
+    failureBackoffHours: 24,   // 분할 실패 후 이 시간 동안 재선정 제외 (무한 재분할 차단)
+    /** 부모의 주어 앵커를 하나도 담지 못한 자식을 폐기 */
+    requireSubjectAnchor    : (process.env.MEMENTO_SPLIT_SUBJECT_GATE  ?? "true") === "true",
+    /** 부모에 없던 양상(예정·추측·의무·의도)을 도입한 자식을 폐기 */
+    rejectIntroducedModality: (process.env.MEMENTO_SPLIT_MODALITY_GATE ?? "true") === "true",
+    subjectAnchorMax        : 12  // 부모 원문에서 뽑을 주어 앵커 상한
+  },
+  /** 피드백 계측 설정 */
+  feedback: {
+    /**
+     * 쓰기 계열 도구 응답에 tool_feedback 요청 힌트를 확률적으로 동봉한다.
+     * recall은 자체 힌트 경로를 이미 갖고 있어 rates에서 제외한다.
+     */
+    sampling: {
+      enabled           : (process.env.MEMENTO_FEEDBACK_SAMPLING ?? "true") === "true",
+      rates             : {
+        remember: 0.10,
+        amend   : 0.25,
+        forget  : 0.25
+      },
+      maxHintsPerSession: 2,    // 세션당 힌트 상한. 초과 시 무음
+      cooldownSeconds   : 900   // 직전 힌트 이후 이 시간 동안 재발행 금지
+    }
   },
   /** 형태소 사전 및 L3 fallback 설정 */
   morphemeIndex: {

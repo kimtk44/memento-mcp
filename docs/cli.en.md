@@ -2,7 +2,7 @@
 
 ## Overview
 
-`bin/memento.js` is the CLI entry point for operating and querying the memory server directly from the terminal, without a running server instance (for most commands).
+`bin/memento.js` is the CLI entry point for operating and querying the memory server directly from the terminal, without a running server instance (for most commands). When installed globally, run it as `anchormind`; the `memento-mcp` command works identically.
 
 ```bash
 node bin/memento.js <command> [options]
@@ -46,7 +46,7 @@ Flags available for all subcommands.
 
 ### Local-only (remote access not supported)
 
-`serve`, `migrate`, `cleanup`, `backfill`, `health`, `update` access the DB or process directly and return an error when used with `--remote`.
+`serve`, `migrate`, `cleanup`, `backfill`, `health`, `update`, `export`, and `import` access the DB or process directly and return an error when used with `--remote`.
 
 ### Remote-capable
 
@@ -97,7 +97,7 @@ node bin/memento.js serve --help
 
 ### migrate
 
-Run all pending `lib/memory/migration-*.sql` files in order. Already-applied migrations are skipped.
+Run all pending `lib/memory/migrations/migration-*.sql` files in order. Already-applied migrations are skipped.
 
 ```bash
 node bin/memento.js migrate
@@ -482,7 +482,7 @@ EMBEDDING_DIMENSIONS=384 DATABASE_URL=$DATABASE_URL \
   node scripts/post-migrate-flexible-embedding-dims.js
 ```
 
-Updates the vector column dimensions in both `fragments` and `morpheme_dict` simultaneously.
+Updates the vector column dimensions in both `fragments` and `morpheme_dict` simultaneously. The skip decision compares the (type, declared dimension) pair, and `--dry-run` previews the conversion targets without applying changes. Each table converts inside a transaction and rolls back on mid-step failure. After conversion, `fragments` is re-embedded automatically by the server scheduler, while `morpheme_dict` requires a separate run of `node scripts/backfill-morpheme-dict.js`.
 
 ### Embedding Backfill
 
