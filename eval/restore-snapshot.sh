@@ -30,10 +30,19 @@ fi
 
 mkdir -p "${DUMP_DIR}"
 
-echo "=== [1/6] pg_dump live ${LIVE_DB} (schema ${SCHEMA}, read-only) ==="
-pg_dump --schema="${SCHEMA}" --no-owner --no-privileges \
-  -h "${HOST}" -U "${PGUSER_}" "${LIVE_DB}" > "${DUMP_FILE}"
-echo "      dump: ${DUMP_FILE} ($(wc -l < "${DUMP_FILE}") lines)"
+# --reuse-dump: restore from the EXISTING dump file instead of re-dumping live.
+# Multi-arm comparisons MUST pass this on every arm after the first — without it
+# each arm restores a different live snapshot and the arms are not comparable
+# (zcon_0814: this exact defect invalidated the June baseline).
+if [ "${1:-}" = "--reuse-dump" ] && [ -s "${DUMP_FILE}" ]; then
+  echo "=== [1/6] REUSING existing dump (no live re-dump) ==="
+else
+  echo "=== [1/6] pg_dump live ${LIVE_DB} (schema ${SCHEMA}, read-only) ==="
+  pg_dump --schema="${SCHEMA}" --no-owner --no-privileges \
+    -h "${HOST}" -U "${PGUSER_}" "${LIVE_DB}" > "${DUMP_FILE}"
+fi
+DUMP_SHA=$(sha256sum "${DUMP_FILE}" | cut -c1-16)
+echo "      dump: ${DUMP_FILE} ($(wc -l < "${DUMP_FILE}") lines, sha256:${DUMP_SHA})"
 
 echo "=== [2/6] drop & recreate ${EVAL_DB} ==="
 dropdb --if-exists -h "${HOST}" -U "${PGUSER_}" "${EVAL_DB}"
@@ -54,6 +63,14 @@ echo "=== [4b/6] apply migration-038 (morpheme_dict dim 1536->1024) to ${EVAL_DB
 # so the L3 morpheme sub-path works (derived cache, lazily repopulated).
 psql -q -v ON_ERROR_STOP=1 -h "${HOST}" -U "${PGUSER_}" -d "${EVAL_DB}" \
   -f "$(dirname "$0")/../lib/memory/migrations/migration-038-morpheme-dict-dim-fix.sql"
+
+echo "=== [4c/6] reset SearchParamAdaptor learning state in ${EVAL_DB} ==="
+# The live dump carries search_param_thresholds rows with sample_count in the
+# thousands (8709 observed 2026-08-14), which crosses MIN_SAMPLE(50) and swaps
+# learned thresholds in for the documented "defaults under 50 samples" eval
+# premise (README Isolation). Truncate in the EVAL DB only — live is untouched.
+psql -q -v ON_ERROR_STOP=1 -h "${HOST}" -U "${PGUSER_}" -d "${EVAL_DB}" \
+  -c "TRUNCATE ${SCHEMA}.search_param_thresholds;"
 
 echo "=== [5/6] FLUSH eval Redis db ${REDIS_DB_IDX} (never db 0) ==="
 redis-cli -n "${REDIS_DB_IDX}" FLUSHDB

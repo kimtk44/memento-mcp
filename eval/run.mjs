@@ -12,6 +12,10 @@
 // Usage: POSTGRES_DB=memento_eval REDIS_DB=15 node eval/run.mjs <goldset.json> [--asof ISO] [--out report.json]
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { MemoryManager } from "../lib/memory/MemoryManager.js";
 import { redisClient, disconnectRedis } from "../lib/redis.js";
 import { scoreQuery, aggregate } from "./metrics.mjs";
@@ -75,6 +79,15 @@ async function main() {
   });
   report.asof    = args.asof;
   report.goldset = args.goldset;
+  // Provenance stamps (zcon_0814): without these a report cannot be tied to the
+  // code state or the exact snapshot it scored, which is what invalidated the
+  // June baseline. Never omit; write "unknown" over guessing.
+  const evalDir = dirname(fileURLToPath(import.meta.url));
+  report.provenance = {
+    git_rev: (() => { try { return execSync("git rev-parse HEAD", { cwd: evalDir }).toString().trim(); } catch { return "unknown"; } })(),
+    dump_sha: (() => { try { return createHash("sha256").update(readFileSync(join(evalDir, "tmp", "memento_snapshot.sql"))).digest("hex").slice(0, 16); } catch { return "unknown"; } })(),
+    run_ts: new Date().toISOString(),
+  };
 
   const json = JSON.stringify(report, null, 2);
   if (args.out) { writeFileSync(args.out, json); console.error(`[run] report -> ${args.out}`); }
