@@ -17,6 +17,10 @@ Phase 2 retrieval changes (morpheme hybrid, doc2query, reranker tuning).
 - **eval-mode** = no sessionId + keyId=null + pinned `asOf` + scheduler not booted
   (harness imports MemoryManager directly) + id sort tiebreak. Re-restore before
   every repeat so the SearchParamAdaptor never crosses 50 samples.
+  `restore-snapshot.sh` step 4c TRUNCATEs `search_param_thresholds` in the eval DB
+  (the live dump otherwise carries ~8.7k learned samples), so a restore really does
+  reset the adaptor. Pass `--reuse-dump` to skip pg_dump and reuse
+  `tmp/memento_snapshot.sql` so several arms share one snapshot.
 - Verified GATEABLE: keyword path 0.0000 run-to-run spread (see `variance.sh`).
 - Residual nondeterminism (reranker `Date.now`, HNSW approx) absorbed as a
   tolerance band (gate band default 0.02).
@@ -24,10 +28,10 @@ Phase 2 retrieval changes (morpheme hybrid, doc2query, reranker tuning).
 ## Files
 | file | role |
 |---|---|
-| `restore-snapshot.sh` | build the isolated eval env (PG restore + Redis flush/rebuild + migration-038) |
+| `restore-snapshot.sh` | build the isolated eval env (PG restore + Redis flush/rebuild + migration-038 + adaptor reset); `--reuse-dump` reuses the last dump |
 | `rebuild-redis-l1.mjs` | rebuild Redis L1 index from the restored snapshot |
 | `metrics.mjs` | pure IR metric functions (unit-tested: `tests/unit/eval-metrics.test.js`) |
-| `run.mjs` | score a goldset → report JSON |
+| `run.mjs` | score a goldset → report JSON (stamped with `provenance{git_rev,dump_sha,run_ts}`) |
 | `compare.mjs` | regression gate: candidate vs baseline (exit 1 on regression) |
 | `variance.sh` | run-to-run variance over N re-restored repeats |
 | `goldset/phase1.json` | 24-query goldset (DEV/TEST/PROBE, dual distribution) |
