@@ -16,7 +16,9 @@ import assert           from "node:assert/strict";
 import {
     classifyQueryType,
     extractFilterKeys,
-    buildSearchEvent
+    extractQueryText,
+    buildSearchEvent,
+    QUERY_TEXT_MAX
 } from "../../lib/memory/signals/SearchEventRecorder.js";
 
 describe("classifyQueryType", () => {
@@ -202,5 +204,69 @@ describe("buildSearchEvent", () => {
         assert.strictEqual(event.l2_count, 0);
         assert.strictEqual(event.l3_count, 0);
         assert.strictEqual(event.l1_is_fallback, true);
+    });
+});
+
+describe("extractQueryText", () => {
+    it("text만 있으면 그대로 반환한다", () => {
+        assert.strictEqual(extractQueryText({ text: "아카이브 노이즈" }), "아카이브 노이즈");
+    });
+
+    it("keywords만 있으면 공백으로 이어 붙인다", () => {
+        assert.strictEqual(extractQueryText({ keywords: ["foo", "bar"] }), "foo bar");
+    });
+
+    it("mixed는 text와 keywords를 모두 보존한다", () => {
+        assert.strictEqual(
+            extractQueryText({ text: "hello", keywords: ["foo", "bar"] }),
+            "hello foo bar"
+        );
+    });
+
+    it("text/keywords가 없을 때만 topic을 쓴다", () => {
+        assert.strictEqual(extractQueryText({ topic: "vault" }), "vault");
+        assert.strictEqual(extractQueryText({ text: "hi", topic: "vault" }), "hi");
+    });
+
+    it("빈 객체와 null은 null을 반환한다", () => {
+        assert.strictEqual(extractQueryText({}), null);
+        assert.strictEqual(extractQueryText(null), null);
+        assert.strictEqual(extractQueryText(undefined), null);
+    });
+
+    it("공백만 있는 값은 null로 떨어진다", () => {
+        assert.strictEqual(extractQueryText({ text: "   ", keywords: ["  "] }), null);
+    });
+
+    it("문자열 keywords도 배열처럼 처리한다", () => {
+        assert.strictEqual(extractQueryText({ keywords: "solo" }), "solo");
+    });
+
+    it("QUERY_TEXT_MAX를 넘으면 자르고 마커를 붙인다", () => {
+        const out = extractQueryText({ text: "x".repeat(QUERY_TEXT_MAX + 500) });
+        assert.ok(out.endsWith(" ...[truncated]"));
+        assert.strictEqual(out.length, QUERY_TEXT_MAX + " ...[truncated]".length);
+    });
+
+    it("경계값(정확히 MAX)은 자르지 않는다", () => {
+        const out = extractQueryText({ text: "x".repeat(QUERY_TEXT_MAX) });
+        assert.strictEqual(out.length, QUERY_TEXT_MAX);
+        assert.ok(!out.includes("truncated"));
+    });
+});
+
+describe("buildSearchEvent query_text", () => {
+    it("이벤트 객체에 query_text를 싣는다", () => {
+        const ev = buildSearchEvent(
+            { text: "hello", keywords: ["foo"] },
+            [1, 2],
+            { searchPath: "L1:2 → RRF" }
+        );
+        assert.strictEqual(ev.query_text, "hello foo");
+    });
+
+    it("빈 쿼리는 query_text가 null이다", () => {
+        const ev = buildSearchEvent({}, [], { searchPath: "L1:0" });
+        assert.strictEqual(ev.query_text, null);
     });
 });
