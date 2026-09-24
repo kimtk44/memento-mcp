@@ -453,3 +453,46 @@ describe("getRecent", () => {
     assert.ok(result.length <= 3, `count=3인데 ${result.length}개 반환됨`);
   });
 });
+
+// ---------------------------------------------------------------------------
+// deindexExpired — valid_to 만료 파편의 역인덱스·Hot Cache 제거 (2026-09-24)
+// ---------------------------------------------------------------------------
+
+describe("deindexExpired", () => {
+
+  it("만료 파편을 키워드/토픽/타입/recent/Hot Cache에서 제거한다", async () => {
+    const redis = newRedis();
+    const idx   = new FragmentIndex();
+    const frag  = makeFragment("x-old", "tp", "fact", ["memos"]);
+    await idx.index(frag, null, null);
+    await idx.cacheFragment("x-old", { ...frag, content: "stale", valid_to: null }, null);
+    assert.ok(await idx.getCachedFragment("x-old", null), "사전조건: Hot Cache 적재");
+
+    await idx.deindexExpired([{ id: "x-old", keywords: ["memos"], topic: "tp", type: "fact", key_id: null }]);
+
+    assert.strictEqual(await idx.getCachedFragment("x-old", null), null, "Hot Cache 스냅샷 잔존");
+    assert.deepStrictEqual(await idx.searchByKeywords(["memos"], 1, null), [], "키워드 인덱스 잔존");
+    assert.ok(!(await idx.searchByTopic("tp", null)).includes("x-old"), "토픽 인덱스 잔존");
+    assert.ok(!(await idx.getRecent(10, null)).includes("x-old"), "recent 잔존");
+    assert.ok(redis._strings.size === 0);
+  });
+
+  it("key_id 파편은 '_g' Hot Cache 키(마스터 키 조회로 적재된 스냅샷)도 제거한다", async () => {
+    newRedis();
+    const idx = new FragmentIndex();
+    await idx.cacheFragment("x-k", { id: "x-k", content: "c" }, null);
+    await idx.cacheFragment("x-k", { id: "x-k", content: "c" }, "K1");
+
+    await idx.deindexExpired([{ id: "x-k", keywords: [], topic: "t", type: "fact", key_id: "K1" }]);
+
+    assert.strictEqual(await idx.getCachedFragment("x-k", null), null, "_g Hot Cache 잔존");
+    assert.strictEqual(await idx.getCachedFragment("x-k", "K1"), null, "_kK1 Hot Cache 잔존");
+  });
+
+  it("빈 배열/undefined는 no-op", async () => {
+    newRedis();
+    const idx = new FragmentIndex();
+    await idx.deindexExpired([]);
+    await idx.deindexExpired(undefined);
+  });
+});
