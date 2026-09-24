@@ -36,7 +36,10 @@ function parseArgs(argv) {
 
 /** Map a goldset entry to recall() params (eval-mode: no sessionId, keyId null). */
 function recallParams(q, asof) {
-  const base = { keyId: null, asOf: asof, pageSize: PAGE_SIZE, tokenBudget: 12000, excludeSeen: false };
+  /** v5.9.1+: a recall without workspace is global-only; the goldset spans scoped fragments,
+   *  so eval (master, in-process) must ask for all workspaces. Older servers ignore both keys. */
+  const base = { keyId: null, asOf: asof, pageSize: PAGE_SIZE, tokenBudget: 12000, excludeSeen: false,
+                 allWorkspaces: true, _isMaster: true };
   switch (q.query_type) {
     case "keywords": return { ...base, keywords: q.query.split(/\s+/).filter(Boolean) };
     case "topic":    return { ...base, topic: q.query };

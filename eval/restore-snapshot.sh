@@ -58,11 +58,11 @@ FRAG_COUNT=$(psql -tA -h "${HOST}" -U "${PGUSER_}" -d "${EVAL_DB}" \
   -c "SELECT count(*) FROM ${SCHEMA}.fragments WHERE valid_to IS NULL;")
 echo "      restored active fragments: ${FRAG_COUNT}"
 
-echo "=== [4b/6] apply migration-038 (morpheme_dict dim 1536->1024) to ${EVAL_DB} ==="
+echo "=== [4b/6] apply migration-050 (morpheme_dict dim align, was fork 038) to ${EVAL_DB} ==="
 # The live dump carries the stale vector(1536) morpheme_dict; fix it post-restore
 # so the L3 morpheme sub-path works (derived cache, lazily repopulated).
 psql -q -v ON_ERROR_STOP=1 -h "${HOST}" -U "${PGUSER_}" -d "${EVAL_DB}" \
-  -f "$(dirname "$0")/../lib/memory/migrations/migration-038-morpheme-dict-dim-fix.sql"
+  -f "$(dirname "$0")/../lib/memory/migrations/migration-050-morpheme-dict-dim-align.sql"
 
 echo "=== [4c/6] reset SearchParamAdaptor learning state in ${EVAL_DB} ==="
 # The live dump carries search_param_thresholds rows with sample_count in the
