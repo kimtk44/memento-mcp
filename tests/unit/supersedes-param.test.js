@@ -10,8 +10,11 @@ import assert from "node:assert/strict";
 describe("remember supersedes parameter", () => {
   test("MemoryRememberer._persistNonAtomic이 supersedes 파라미터를 처리한다", async () => {
     const { MemoryRememberer } = await import("../../lib/memory/processors/MemoryRememberer.js");
+    /** 2026-09-24: supersedes 처리는 임베딩 큐 적재 전에 실행되도록 _applySupersedes로 분리됐다 */
     const src = MemoryRememberer.prototype._persistNonAtomic.toString();
-    assert.ok(src.includes("supersedes"), "_persistNonAtomic에 supersedes 처리 로직 필수");
+    assert.ok(src.includes("_applySupersedes"), "_persistNonAtomic은 _applySupersedes 호출 필수");
+    const helper = MemoryRememberer.prototype._applySupersedes.toString();
+    assert.ok(helper.includes("supersedes"), "_applySupersedes에 supersedes 처리 로직 필수");
   });
 
   test("MemoryRememberer._supersede 헬퍼가 존재한다", async () => {
