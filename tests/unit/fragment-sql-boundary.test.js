@@ -39,7 +39,7 @@ const ALLOWED = {
   "cli/stats.js": 5,
   "memory/FragmentIndex.js": 1,
   "memory/consolidate/ConsolidatorGC.js": 12,
-  "memory/consolidate/FragmentGC.js": 11,
+  "memory/consolidate/FragmentGC.js": 12,  // [fork-patch] +1 abandonStaleOpenErrors: lifecycle GC UPDATE, same class as deleteExpired
   "memory/consolidate/MemoryConsolidator.js": 23,
   "memory/consolidate/MorphemeBackfill.js": 2,
   "memory/consolidate/UtilityBaseline.js": 1,
