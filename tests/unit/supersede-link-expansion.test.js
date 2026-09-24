@@ -149,3 +149,73 @@ describe("MemoryRememberer.forget — topic dryRun", () => {
     assert.strictEqual(res.deleted, 1);
   });
 });
+
+/* ── 2026-09-24 3차: forget(topic) permanent 보호 + createLinks 스키마 정합 ── */
+
+const { FragmentReader } = await import("../../lib/memory/read/FragmentReader.js");
+
+describe("FragmentReader.searchByTopic — ttl_tier 선택 조회", () => {
+  it("includeTtlTier:true면 f.ttl_tier를 SELECT한다", async () => {
+    await new FragmentReader().searchByTopic("t", { includeTtlTier: true });
+    assert.match(dbState.calls[0].sql, /f\.ttl_tier/);
+  });
+
+  it("기본 검색 컬럼은 넓히지 않는다", async () => {
+    await new FragmentReader().searchByTopic("t", {});
+    assert.doesNotMatch(dbState.calls[0].sql, /ttl_tier/);
+  });
+});
+
+describe("MemoryRememberer.forget(topic) — permanent 보호 (실제 reader 경유)", () => {
+  /** SELECT 컬럼에 ttl_tier가 있을 때만 행에 ttl_tier를 싣는 가짜 DB — 컬럼 누락을 재현한다 */
+  const rowsFor = (sql) => {
+    const withTier = /ttl_tier/.test(sql);
+    return [
+      { id: "frag-perm", type: "fact", key_id: null, ...(withTier ? { ttl_tier: "permanent" } : {}) },
+      { id: "frag-cold", type: "fact", key_id: null, ...(withTier ? { ttl_tier: "cold" } : {}) }
+    ];
+  };
+
+  const makeRm = (deleted) => {
+    const reader = new FragmentReader();
+    const store  = {
+      searchByTopic: (topic, opts) => reader.searchByTopic(topic, opts),
+      deleteMany   : async (ids) => { deleted.push(...ids); return ids.length; }
+    };
+    return new MemoryRememberer({ store, index: { deindex: async () => {} } });
+  };
+
+  beforeEach(() => {
+    dbState.handler = async (sql) => /FROM agent_memory\.fragments f/.test(sql) ? { rows: rowsFor(sql) } : { rows: [] };
+  });
+
+  it("force 없이는 permanent 파편을 삭제하지 않는다", async () => {
+    const deleted = [];
+    const res = await makeRm(deleted).forget({ topic: "t" });
+    assert.deepStrictEqual(deleted, ["frag-cold"]);
+    assert.strictEqual(res.protected, 1);
+  });
+
+  it("force:true면 permanent도 삭제한다", async () => {
+    const deleted = [];
+    await makeRm(deleted).forget({ topic: "t", force: true });
+    assert.deepStrictEqual(deleted.sort(), ["frag-cold", "frag-perm"]);
+  });
+
+  it("dryRun 출력에 실제 ttl_tier가 실린다", async () => {
+    const res = await makeRm([]).forget({ topic: "t", dryRun: true });
+    assert.deepStrictEqual(res.simulated.would_delete.map(f => [f.id, f.ttl_tier]), [["frag-cold", "cold"]]);
+    assert.strictEqual(res.simulated.protected, 1);
+  });
+});
+
+describe("LinkStore.createLinks — live 스키마 정합", () => {
+  it("존재하지 않는 fragment_links.accessed_at을 갱신하지 않는다", async () => {
+    dbState.handler = async (sql) => /RETURNING id/.test(sql) ? { rows: [{ id: 1 }] } : { rows: [] };
+    await new LinkStore().createLinks([{ fromId: "frag-a", toId: "frag-b", relationType: "related" }], "default");
+    const ins = dbState.calls.find(c => /INSERT INTO agent_memory\.fragment_links/.test(c.sql));
+    assert.ok(ins, "INSERT 미실행");
+    assert.doesNotMatch(ins.sql, /accessed_at/);
+    assert.match(ins.sql, /CASE WHEN agent_memory\.fragment_links\.relation_type = 'superseded_by'/);
+  });
+});
