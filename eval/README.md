@@ -51,10 +51,18 @@ node eval/compare.mjs eval/baseline.json /tmp/cand.json
 bash eval/variance.sh eval/goldset/phase1.json 3
 ```
 
-## Baseline state (2026-06-16, post-bugfix)
-overall recall@20 = 0.625, recall@5 = 0.292, mrr = 0.304.
-- keyword recall@20 = 0.923 (L1/L2 healthy).
-- text/semantic recall@20 = 0.200 — **the Phase 2 target** (not a bug).
+## Baseline state (2026-09-24, relabelled goldset, code 05616db = v5.10.0 fork)
+overall recall@20 = 0.500, recall@5 = 0.350, mrr = 0.237 (`baseline.json`, dump_sha e1c10e22,
+two re-restored runs identical).
+- keywords recall@20 = 0.364 (n=13), text = 0.625 (n=10), topic = 1.0 (n=1).
+- Goldset relabelled 2026-09-24: labels pointing at fragments superseded by the
+  truncation-recovery rewrite were moved to their live successors; 4 phase1 queries
+  (p01, p04, c01, c07) whose fragments were hard-deleted have `relevant_ids: []` and are
+  excluded from the means (metrics return null). Evidence per label:
+  the private vault note memento-eval-goldset-relabel-2026-09-24 (fragment excerpts, not published here).
+- v5.9.1+ scoping: run.mjs recalls with allWorkspaces (6 of the labels are workspace-scoped).
+
+History — 2026-06-16 post-bugfix baseline: recall@20 0.625, keyword 0.923, text 0.200.
   Ablation (2026-06-16) pinpoints the loss: raw pgvector exact cosine = 10/10
   rank-1 AND HNSW `searchBySemantic`(minSim=0) = 10/10 rank-1, but recall() final
   = 2/10. So embeddings + HNSW + candidate-gen are perfect; the loss is entirely
