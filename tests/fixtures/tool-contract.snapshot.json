@@ -58,6 +58,9 @@
         "supersedes": {
           "type": "boolean"
         },
+        "targetWorkspace": {
+          "type": "string"
+        },
         "topic": {
           "type": "string"
         },
@@ -486,6 +489,9 @@
         "agentId": {
           "type": "string"
         },
+        "consolidate": {
+          "type": "boolean"
+        },
         "decisions": {
           "type": "array",
           "items": {
@@ -880,6 +886,9 @@
         },
         "supersedes": {
           "type": "boolean"
+        },
+        "targetWorkspace": {
+          "type": "string"
         },
         "topic": {
           "type": "string"
@@ -1346,6 +1355,9 @@
       "properties": {
         "agentId": {
           "type": "string"
+        },
+        "consolidate": {
+          "type": "boolean"
         },
         "decisions": {
           "type": "array",

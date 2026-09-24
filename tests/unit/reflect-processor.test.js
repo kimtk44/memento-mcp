@@ -270,14 +270,44 @@ describe("ReflectProcessor - session consolidation", () => {
     madeProcessors.add(processor);
 
     const result = await processor.process({
-      sessionId: "sess-1",
-      agentId  : "test-agent",
+      sessionId  : "sess-1",
+      agentId    : "test-agent",
+      consolidate: true,
     });
 
     assert.equal(deps.sessionLinker.consolidateSessionFragments.mock.callCount(), 1);
     assert.equal(result.breakdown.summary, 1);
     assert.equal(result.breakdown.decisions, 1);
     assert.equal(result.groups.length, 1);
+  });
+
+  it("consolidate 미지정 시 consolidateSessionFragments 미호출 (2026-06-28 cross-session fix)", async () => {
+    const deps = createMockDeps({
+      sessionLinker: {
+        consolidateSessionFragments: mock.fn(async () => ([{
+          workspace: null, topic: null, caseId: null,
+          summary  : ["타 대화 파편이 종합되면 안 됨"],
+          decisions: ["혼입되면 안 되는 결정"],
+          errors_resolved: [], new_procedures: [], open_questions: [],
+          sourceFragmentIds: [], wmItemIds: ["wm-x"],
+        }])),
+        autoLinkSessionFragments: mock.fn(async () => ({ linkSuggestions: [] })),
+      },
+    });
+    const processor = new ReflectProcessor(deps);
+    madeProcessors.add(processor);
+
+    const result = await processor.process({
+      sessionId        : "sess-shared",
+      agentId          : "test-agent",
+      narrative_summary: "명시 서사만 저장되어야 한다",
+    });
+
+    /** 기본(consolidate 미지정) 경로: 종합 미호출 → 자동 summary/decisions 미생성, WM evict도 없음 */
+    assert.equal(deps.sessionLinker.consolidateSessionFragments.mock.callCount(), 0);
+    assert.equal(result.breakdown.summary, 0);
+    assert.equal(result.breakdown.decisions, 0);
+    assert.equal(deps.index.evictWorkingMemoryItems.mock.callCount(), 0);
   });
 
   it("sessionId 존재 시 그룹이 소비한 WM 항목만 evict", async () => {
@@ -301,7 +331,7 @@ describe("ReflectProcessor - session consolidation", () => {
     const processor = new ReflectProcessor(deps);
     madeProcessors.add(processor);
 
-    await processor.process({ sessionId: "sess-1", agentId: "test-agent" });
+    await processor.process({ sessionId: "sess-1", agentId: "test-agent", consolidate: true });
 
     assert.equal(deps.index.evictWorkingMemoryItems.mock.callCount(), 1);
     const args = deps.index.evictWorkingMemoryItems.mock.calls[0].arguments;
