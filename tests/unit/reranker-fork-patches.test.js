@@ -18,7 +18,7 @@ process.env.RERANKER_EXTERNAL_FALLBACK = "skip";
 import { describe, it, mock, afterEach } from "node:test";
 import assert                            from "node:assert/strict";
 
-const { rerank, preloadReranker, isRerankerAvailable } = await import("../../lib/memory/read/Reranker.js");
+const { rerank, preloadReranker, isRerankerAvailable, capRerankQuery } = await import("../../lib/memory/read/Reranker.js");
 
 const candidates = [
   { id: "old",   content: "older doc",  created_at: "2026-01-01" },
@@ -37,6 +37,19 @@ function jsonResponse(status, body) {
 
 describe("reranker fork patches", () => {
   afterEach(() => { mock.restoreAll(); });
+
+  it("caps a long query to head + tail before it reaches the reranker", async () => {
+    const head = "Q".repeat(600), middle = "m".repeat(5000), tail = "T".repeat(300);
+    let sent;
+    mock.method(globalThis, "fetch", async (_url, init) => {
+      sent = JSON.parse(init.body).query;
+      return jsonResponse(200, [{ index: 0, score: 1 }, { index: 1, score: 0 }, { index: 2, score: -1 }]);
+    });
+    await rerank(head + middle + tail, candidates, 15);
+    assert.equal(sent, `${head} … ${tail}`);
+    assert.equal(capRerankQuery("short query"), "short query", "short queries pass unchanged");
+    assert.equal(capRerankQuery("x".repeat(900)).length, 900, "exactly at the cap is unchanged");
+  });
 
   it("preload /health failure in skip mode keeps external mode", async () => {
     mock.method(globalThis, "fetch", async () => { throw new Error("ECONNREFUSED"); });
